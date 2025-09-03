@@ -1,0 +1,29 @@
+{
+  "overlay": {
+    "show_bar": true,
+    "show_sides": false,
+    "scale": 1.7,
+    "side_w_base": 100.0,
+    "blur_amount": 0.7,
+    "curve_gamma": 0.8,
+    "alpha_strength": 0.6,
+    "bar_pos": [
+      658.641,
+      1023.194
+    ],
+    "left_x": 0.0,
+    "right_x": 1733.0
+  },
+  "heuristic": {
+    "enabled": false,
+    "wSteer": 0.05,
+    "wThrottle": 1.1,
+    "wBrake": 0.3,
+    "wRumble": 1.15,
+    "slipGain": 1.0,
+    "slipSteerMin": 0.42,
+    "slipThrottleMin": 0.2,
+    "slipRumbleMin": 1.0,
+    "emaAlpha": 0.22
+  }
+}
