@@ -62,11 +62,18 @@ class UDPServer(QtCore.QObject):
 
         # low-rate debug to verify we really send packets to the bridge
         self._last_dbg_ms = 0
+        # low-rate debug for force feedback values coming from the bridge
+        self._last_ffb_log_ms = 0
 
     def _on_ffb(self, L: float, R: float):
         self._ffbL = float(max(0.0, min(1.0, L)))
         self._ffbR = float(max(0.0, min(1.0, R)))
         self._ffb_ms = int(time.time()*1000)
+        # Log FFB occasionally so we know games are producing rumble
+        now_ms = self._ffb_ms
+        if now_ms - self._last_ffb_log_ms > 500:
+            LOG.log(f"⬅️ FFB rumble from game L={self._ffbL:.2f} R={self._ffbR:.2f}")
+            self._last_ffb_log_ms = now_ms
 
     def start(self):
         if self._th and self._th.is_alive(): return
@@ -272,10 +279,6 @@ class UDPServer(QtCore.QObject):
                 # *** SEND TO BRIDGE EVERY TELEMETRY PACKET ***
                 try:
                     self._bridge.send_state(use_lx, use_ly, rt, lt, mask)
-                    # low-rate debug print (2 Hz)
-                    if now_ms - self._last_dbg_ms > 500:
-                        LOG.log(f"➡️ to-bridge lx={use_lx:+.2f} ly={use_ly:+.2f} rt={rt} lt={lt} mask=0x{mask:X}")
-                        self._last_dbg_ms = now_ms
                 except Exception as e:
                     if now_ms - self._last_dbg_ms > 1000:
                         LOG.log(f"⚠️ bridge send error: {e}")
