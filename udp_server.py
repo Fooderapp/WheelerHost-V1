@@ -69,6 +69,8 @@ class UDPServer(QtCore.QObject):
         self._freeze_steer = False
         # Debug: disable synthesized rumble (only pass through real FFB)
         self._ffb_passthrough_only = False
+        # Debug: if real FFB is "weak" (both channels near zero), blend in synth fallback
+        self._hybrid_when_weak = True
 
     def _on_ffb(self, L: float, R: float):
         self._ffbL = float(max(0.0, min(1.0, L)))
@@ -117,6 +119,11 @@ class UDPServer(QtCore.QObject):
             return
         # keep freshness
         self._ffb_ms = now
+
+    @QtCore.Slot(bool)
+    def set_hybrid_when_weak(self, on: bool):
+        self._hybrid_when_weak = bool(on)
+        LOG.log(f"🧪 Debug: Hybrid when weak set to {self._hybrid_when_weak}")
 
     def start(self):
         if self._th and self._th.is_alive(): return
@@ -331,9 +338,20 @@ class UDPServer(QtCore.QObject):
 
                 # Real FFB if fresh (<300ms), else (optionally) synthesize from telemetry
                 if now_ms - self._ffb_ms <= 300:
-                    rumbleL = self._ffbL
-                    rumbleR = self._ffbR
+                    rumbleL = float(self._ffbL)
+                    rumbleR = float(self._ffbR)
                     src = "real"
+                    # If real is very weak and hybrid enabled (and not hard passthrough-only), mix in synth
+                    if self._hybrid_when_weak and not self._ffb_passthrough_only:
+                        weak = (rumbleL < 0.03 and rumbleR < 0.03)
+                        if weak:
+                            g = max(0.0, min(1.0, abs(latG)))
+                            synthL = max(0.0, min(1.0, 0.12 + 0.65 * throttle + 0.22 * g))
+                            synthR = max(0.0, min(1.0, 0.50 * g + 0.50 * brake))
+                            # Light blend to preserve real spikes when they exist
+                            rumbleL = max(rumbleL, 0.6 * synthL)
+                            rumbleR = max(rumbleR, 0.6 * synthR)
+                            src = "hybrid"
                 else:
                     if self._ffb_passthrough_only:
                         rumbleL = 0.0
