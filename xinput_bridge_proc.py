@@ -52,6 +52,18 @@ class XInputBridgeProc:
         except Exception:
             pass
 
+    def set_target(self, target: str):
+        t = (target or "").strip().lower()
+        if t not in ("x360", "ds4"):
+            return
+        self._target = t
+        try:
+            if self._p and self._p.stdin:
+                self._p.stdin.write(json.dumps({"type":"target","value": t}) + "\n")
+                self._p.stdin.flush()
+        except Exception:
+            pass
+
     def set_feedback_callback(self, cb):
         """cb(L:float, R:float)"""
         self._ffb_cb = cb

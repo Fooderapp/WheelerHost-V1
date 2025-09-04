@@ -104,6 +104,25 @@ class UDPServer(QtCore.QObject):
         self._ffb_passthrough_only = bool(on)
         LOG.log(f"🎛️ Debug: FFB passthrough-only set to {self._ffb_passthrough_only}")
 
+    # Runtime toggles
+    @QtCore.Slot(bool)
+    def set_bed_when_real_zero(self, on: bool):
+        self._bed_when_real_zero = bool(on)
+        LOG.log(f"🛏️ Bed-on-zero set to {self._bed_when_real_zero}")
+
+    @QtCore.Slot(str)
+    def set_pad_target(self, target: str):
+        t = (target or "").strip().lower()
+        if t not in ("x360", "ds4"):
+            return
+        try:
+            if hasattr(self._bridge, 'set_target'):
+                self._bridge.set_target(t)
+                self._bridge_name = f"ViGEmBridge-{t.upper()}"
+                LOG.log(f"🎮 Switched pad target to {t.upper()}")
+        except Exception as e:
+            LOG.log(f"⚠️ Failed to switch pad target: {e}")
+
     @QtCore.Slot()
     def ffb_test(self):
         """Inject a short test rumble (2s) as if coming from the game."""

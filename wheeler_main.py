@@ -86,6 +86,10 @@ class MainWindow(QtWidgets.QWidget):
         self.server.buttons.connect(self.onButtons)
         self.server.tuning.connect(self.onRemoteTuning)
         self.server.clients_changed.connect(self.onClientsChanged)
+        # Wire toggles
+        self.cmbPad.currentTextChanged.connect(lambda s: self.server.set_pad_target(s.lower()))
+        self.chkBed.toggled.connect(self.server.set_bed_when_real_zero)
+        self.chkFfbPassthrough.toggled.connect(self.server.set_ffb_passthrough_only)
 
         self.overlay = Overlay()
 
@@ -102,12 +106,20 @@ class MainWindow(QtWidgets.QWidget):
         self.chkMaskRealZero = QtWidgets.QCheckBox("Mask real=0 as none")
         self.chkMaskRealZero.setChecked(True)
         self.chkFfbDebug.setChecked(False)
+        # New: A/B pad target + bed toggle
+        self.cmbPad = QtWidgets.QComboBox(); self.cmbPad.addItems(["X360","DS4"]); self.cmbPad.setCurrentIndex(0)
+        self.chkBed = QtWidgets.QCheckBox("Bed when real=0"); self.chkBed.setChecked(True)
+
         top.addWidget(self.lblLan)
         top.addStretch(1)
+        top.addWidget(QtWidgets.QLabel("Pad:"))
+        top.addWidget(self.cmbPad)
+        top.addSpacing(8)
         top.addWidget(self.chkFreezeSteer)
         top.addWidget(self.chkFfbPassthrough)
         top.addWidget(self.chkHybrid)
         top.addWidget(self.chkMaskRealZero)
+        top.addWidget(self.chkBed)
         top.addWidget(self.chkFfbDebug)
         top.addWidget(self.btnStart)
 
