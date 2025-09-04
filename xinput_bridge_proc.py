@@ -56,8 +56,41 @@ class XInputBridgeProc:
             try:
                 obj = json.loads(line)
                 if isinstance(obj, dict) and obj.get("type") == "ffb":
-                    L = float(obj.get("rumbleL", 0.0))
-                    R = float(obj.get("rumbleR", 0.0))
+                    def _val(keys, default=0.0):
+                        for k in keys:
+                            if k in obj:
+                                try:
+                                    return float(obj.get(k, default))
+                                except Exception:
+                                    pass
+                        return float(default)
+
+                    # Try a variety of known keys from possible bridges
+                    L = _val(["rumbleL","leftMotor","rumble_left","L","l"])  # main left motor
+                    R = _val(["rumbleR","rightMotor","rumble_right","R","r"]) # main right motor
+                    LT = _val(["rumbleLT","leftTrigger","lt"])                 # impulse trigger left
+                    RT = _val(["rumbleRT","rightTrigger","rt"])                # impulse trigger right
+
+                    # Normalize to 0..1 if large (e.g., 0..65535)
+                    def _norm(x):
+                        x = float(x)
+                        if x < 0: x = 0.0
+                        # Heuristic normalization for typical ranges
+                        if x > 1.0:
+                            if x <= 255.0:
+                                x = x / 255.0
+                            else:
+                                x = x / 65535.0
+                        if x > 1.0: x = 1.0
+                        return x
+
+                    L = _norm(L); R = _norm(R); LT = _norm(LT); RT = _norm(RT)
+
+                    # If main motors are zero but triggers are active, map triggers into channels
+                    if L <= 0.0 and R <= 0.0 and (LT > 0.0 or RT > 0.0):
+                        # Bias triggers to the right/high channel by default
+                        L = max(L, LT * 0.5)
+                        R = max(R, RT * 0.8)
                     if self._ffb_cb: self._ffb_cb(L, R)
             except Exception:
                 pass

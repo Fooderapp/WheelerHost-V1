@@ -36,8 +36,30 @@ class XInputBridge:
                 if not s or s[0] != "{": continue
                 obj = json.loads(s)
                 if isinstance(obj, dict) and obj.get("type") == "ffb":
-                    L = float(obj.get("rumbleL", 0.0))
-                    R = float(obj.get("rumbleR", 0.0))
+                    def _val(keys, default=0.0):
+                        for k in keys:
+                            if k in obj:
+                                try:
+                                    return float(obj.get(k, default))
+                                except Exception:
+                                    pass
+                        return float(default)
+                    L = _val(["rumbleL","leftMotor","rumble_left","L","l"])  # main left
+                    R = _val(["rumbleR","rightMotor","rumble_right","R","r"]) # main right
+                    LT = _val(["rumbleLT","leftTrigger","lt"])                 # trigger left
+                    RT = _val(["rumbleRT","rightTrigger","rt"])                # trigger right
+                    def _norm(x):
+                        x = float(x)
+                        if x < 0: x = 0.0
+                        if x > 1.0:
+                            if x <= 255.0: x = x / 255.0
+                            else: x = x / 65535.0
+                        if x > 1.0: x = 1.0
+                        return x
+                    L = _norm(L); R = _norm(R); LT = _norm(LT); RT = _norm(RT)
+                    if L <= 0.0 and R <= 0.0 and (LT > 0.0 or RT > 0.0):
+                        L = max(L, LT * 0.5)
+                        R = max(R, RT * 0.8)
                     if self._ffb_cb: self._ffb_cb(L, R)
             except Exception:
                 pass
