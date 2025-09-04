@@ -59,6 +59,7 @@ class UDPServer(QtCore.QObject):
         self._ffbR = 0.0
         self._ffb_ms = 0
         self._bridge.set_feedback_callback(self._on_ffb)
+        self._ffb_test_timer: Optional[QtCore.QTimer] = None
 
         # low-rate debug to verify we really send packets to the bridge
         self._last_dbg_ms = 0
@@ -89,6 +90,33 @@ class UDPServer(QtCore.QObject):
     def set_ffb_passthrough_only(self, on: bool):
         self._ffb_passthrough_only = bool(on)
         LOG.log(f"🎛️ Debug: FFB passthrough-only set to {self._ffb_passthrough_only}")
+
+    @QtCore.Slot()
+    def ffb_test(self):
+        """Inject a short test rumble (2s) as if coming from the game."""
+        # Start/refresh timer updating freshness
+        L, R = 0.6, 0.8
+        self._ffbL = L; self._ffbR = R; self._ffb_ms = int(time.time()*1000)
+        end_ms = self._ffb_ms + 2000
+        if self._ffb_test_timer is None:
+            self._ffb_test_timer = QtCore.QTimer(self)
+            self._ffb_test_timer.setInterval(120)
+            self._ffb_test_timer.timeout.connect(lambda: self._tick_ffb_test(end_ms))
+        if not self._ffb_test_timer.isActive():
+            self._ffb_test_timer.start()
+        LOG.log("🧪 FFB test: injected L=0.6 R=0.8 for ~2s")
+
+    def _tick_ffb_test(self, end_ms: int):
+        now = int(time.time()*1000)
+        if now >= end_ms:
+            # stop
+            if self._ffb_test_timer and self._ffb_test_timer.isActive():
+                self._ffb_test_timer.stop()
+            self._ffbL = 0.0; self._ffbR = 0.0; self._ffb_ms = now
+            LOG.log("🧪 FFB test: finished")
+            return
+        # keep freshness
+        self._ffb_ms = now
 
     def start(self):
         if self._th and self._th.is_alive(): return

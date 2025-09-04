@@ -171,6 +171,8 @@ class MainWindow(QtWidgets.QWidget):
         self.prFfbR = QtWidgets.QProgressBar(); self.prFfbR.setRange(0,1000); self.prFfbR.setTextVisible(False)
         ffbGrid.addWidget(QtWidgets.QLabel("Left (low freq)"), 0, 0); ffbGrid.addWidget(self.lblFfbLVal, 0, 1); ffbGrid.addWidget(self.prFfbL, 1, 0, 1, 2)
         ffbGrid.addWidget(QtWidgets.QLabel("Right (high freq)"), 2, 0); ffbGrid.addWidget(self.lblFfbRVal, 2, 1); ffbGrid.addWidget(self.prFfbR, 3, 0, 1, 2)
+        self.btnFfbTest = QtWidgets.QPushButton("FFB Test (2s)")
+        ffbGrid.addWidget(self.btnFfbTest, 4, 0, 1, 2)
         rightCol.addWidget(self.grpFfb)
 
         labClients = QtWidgets.QLabel("Client"); rightCol.addWidget(labClients)
@@ -201,6 +203,7 @@ class MainWindow(QtWidgets.QWidget):
         self.chkFfbDebug.toggled.connect(self.grpFfb.setVisible)
         self.chkFreezeSteer.toggled.connect(self.server.set_freeze_steering)
         self.chkFfbPassthrough.toggled.connect(self.server.set_ffb_passthrough_only)
+        self.btnFfbTest.clicked.connect(self.server.ffb_test)
 
         # Hotkeys (use QtGui.QShortcut)
         s1 = QtGui.QShortcut(QtGui.QKeySequence("F9"), self)
