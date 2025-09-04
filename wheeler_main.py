@@ -97,6 +97,7 @@ class MainWindow(QtWidgets.QWidget):
         self.chkFfbDebug = QtWidgets.QCheckBox("FFB Debug")
         self.chkFreezeSteer = QtWidgets.QCheckBox("Freeze steering (debug)")
         self.chkFfbPassthrough = QtWidgets.QCheckBox("Disable synth FFB (passthrough only)")
+        self.chkFfbPassthrough.setChecked(True)
         self.chkHybrid = QtWidgets.QCheckBox("Hybrid synth when real weak")
         self.chkMaskRealZero = QtWidgets.QCheckBox("Mask real=0 as none")
         self.chkMaskRealZero.setChecked(True)

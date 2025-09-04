@@ -8,6 +8,10 @@ from typing import Optional, Tuple, Dict
 from PySide6 import QtCore
 
 from xinput_bridge_proc import XInputBridgeProc
+try:
+    from vjoy_bridge import VJoyBridge  # optional
+except Exception:
+    VJoyBridge = None  # type: ignore
 
 # ---------- Logging ----------
 class Logger(QtCore.QObject):
@@ -53,8 +57,10 @@ class UDPServer(QtCore.QObject):
         self._locked = True
         self._idle_after_ms = 900
 
-        # Bridge (local UDP to C# helper)
-        self._bridge = XInputBridgeProc()
+        # Bridge (prefer ViGEm; else vJoy if available)
+        self._bridge = None
+        self._bridge_name = ""
+        self._init_bridge()
         self._ffbL = 0.0
         self._ffbR = 0.0
         self._ffb_ms = 0
@@ -67,11 +73,14 @@ class UDPServer(QtCore.QObject):
         self._last_ffb_log_ms = 0
         # Debug: freeze steering to neutral (ignore phone steering)
         self._freeze_steer = False
-        # Debug: disable synthesized rumble (only pass through real FFB)
-        self._ffb_passthrough_only = False
-        # Debug: if real FFB is "weak" (both channels near zero), blend in synth fallback
+        # Debug: disable telemetry-based synthesized rumble (default: ON)
+        self._ffb_passthrough_only = True
+        # Debug: when real FFB is fresh but both channels are near zero, inject a light bed
+        # so the phone still feels alive (does NOT use telemetry mapping)
+        self._bed_when_real_zero = True
+        # Debug: hybrid synth disabled by default (we avoid telemetry-driven synth now)
         self._hybrid_when_weak = False
-        # Debug: mask misleading "real but zero" events as none
+        # Debug: mask misleading "real but zero" events as none (handled below with bed)
         self._mask_real_zero = True
 
     def _on_ffb(self, L: float, R: float):
@@ -136,7 +145,7 @@ class UDPServer(QtCore.QObject):
         if self._th and self._th.is_alive(): return
         self._stop.clear()
         self._th = threading.Thread(target=self._run, daemon=True); self._th.start()
-        LOG.log(f"🟢 UDP server ready on :{self.port} (ViGEmBridge)")
+        LOG.log(f"🟢 UDP server ready on :{self.port} ({self._bridge_name})")
 
     def stop(self):
         self._stop.set()
@@ -194,7 +203,7 @@ class UDPServer(QtCore.QObject):
     def _lock_to(self, addr: Tuple[str,int]):
         self._client = ClientState(addr=addr, last_rx_ms=int(time.time()*1000), state="active", neutral_sent=False)
         self._locked = True
-        LOG.log(f"🔒 Locked to {addr[0]}:{addr[1]} (ViGEmBridge)")
+        LOG.log(f"🔒 Locked to {addr[0]}:{addr[1]} ({self._bridge_name})")
         self._emit_clients()
 
     def _disconnect(self, note: str):
@@ -345,38 +354,27 @@ class UDPServer(QtCore.QObject):
 
                 # Real FFB if fresh (<300ms), else (optionally) synthesize from telemetry
                 if now_ms - self._ffb_ms <= 300:
+                    # Fresh real FFB from game
                     rumbleL = float(self._ffbL)
                     rumbleR = float(self._ffbR)
                     src = "real"
-                    # If both channels are effectively zero, optionally mask as none
-                    if self._mask_real_zero and (rumbleL < 0.005 and rumbleR < 0.005):
-                        src = "none"
-                        rumbleL = 0.0
-                        rumbleR = 0.0
-                    # If real is very weak and hybrid enabled (and not hard passthrough-only), mix in synth
-                    if self._hybrid_when_weak and not self._ffb_passthrough_only:
-                        weak = (rumbleL < 0.03 and rumbleR < 0.03)
-                        if weak:
-                            g = max(0.0, min(1.0, abs(latG)))
-                            synthL = max(0.0, min(1.0, 0.12 + 0.65 * throttle + 0.22 * g))
-                            synthR = max(0.0, min(1.0, 0.50 * g + 0.50 * brake))
-                            # Light blend to preserve real spikes when they exist
-                            rumbleL = max(rumbleL, 0.6 * synthL)
-                            rumbleR = max(rumbleR, 0.6 * synthR)
-                            src = "hybrid"
+                    # If both channels are effectively zero, optionally inject a light "bed"
+                    if (rumbleL < 0.005 and rumbleR < 0.005):
+                        if self._bed_when_real_zero:
+                            # Subtle constant bed; not telemetry-based
+                            rumbleL = 0.10
+                            rumbleR = 0.12
+                            src = "bed"
+                        elif self._mask_real_zero:
+                            src = "none"
+                            rumbleL = 0.0
+                            rumbleR = 0.0
+                    # No hybrid blending; we avoid telemetry-driven synth by default
                 else:
-                    if self._ffb_passthrough_only:
-                        rumbleL = 0.0
-                        rumbleR = 0.0
-                        src = "none"
-                    else:
-                        # Fallback (similar to windows UI):
-                        # left: baseline + throttle + lateral G
-                        # right: lateral G + brake
-                        g = max(0.0, min(1.0, abs(latG)))
-                        rumbleL = max(0.0, min(1.0, 0.12 + 0.65 * throttle + 0.22 * g))
-                        rumbleR = max(0.0, min(1.0, 0.50 * g + 0.50 * brake))
-                        src = "synth"
+                    # No fresh real FFB: if passthrough-only, keep silent; else (legacy) we could synthesize, but disabled per request
+                    rumbleL = 0.0
+                    rumbleR = 0.0
+                    src = "none"
 
                 # UI/overlay
                 self.telemetry.emit(x_proc, throttle, brake, latG, seq, rumbleL, rumbleR, src)
@@ -407,3 +405,27 @@ class UDPServer(QtCore.QObject):
         try: self._bridge.close()
         except Exception: pass
         LOG.log("🛑 UDP server stopped")
+
+    def _init_bridge(self):
+        """Select and initialize input bridge (ViGEm or vJoy)."""
+        # Try ViGEm first
+        try:
+            self._bridge = XInputBridgeProc()
+            self._bridge_name = "ViGEmBridge"
+            self._ffbL = 0.0; self._ffbR = 0.0; self._ffb_ms = 0
+            self._bridge.set_feedback_callback(self._on_ffb)
+            return
+        except Exception as e:
+            pass
+        # Fall back to vJoy if available
+        try:
+            if VJoyBridge is None:
+                raise RuntimeError("vJoy bridge not available")
+            self._bridge = VJoyBridge(device_id=1)
+            self._bridge_name = "vJoy"
+            # no FFB available via vJoy; keep passthrough-only off to allow synth fallback
+            return
+        except Exception as e:
+            raise RuntimeError(
+                "No input bridge available. Install ViGEm (ViGEmBridge.exe) or vJoy + pyvjoy."
+            )
