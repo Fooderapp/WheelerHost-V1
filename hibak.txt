@@ -1,0 +1,11 @@
+C:\Users\berry\Desktop\Wheeler\WheelerHost-V1>py wheeler_main.py
+Traceback (most recent call last):
+  File "C:\Users\berry\Desktop\Wheeler\WheelerHost-V1\wheeler_main.py", line 333, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\berry\Desktop\Wheeler\WheelerHost-V1\wheeler_main.py", line 329, in main
+    w = MainWindow(); w.show()
+  File "C:\Users\berry\Desktop\Wheeler\WheelerHost-V1\wheeler_main.py", line 90, in __init__
+    self.cmbPad.currentTextChanged.connect(lambda s: self.server.set_pad_target(s.lower()))
+    ^^^^^^^^^^^
+AttributeError: 'MainWindow' object has no attribute 'cmbPad'
