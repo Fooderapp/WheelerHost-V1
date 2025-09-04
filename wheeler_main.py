@@ -86,10 +86,6 @@ class MainWindow(QtWidgets.QWidget):
         self.server.buttons.connect(self.onButtons)
         self.server.tuning.connect(self.onRemoteTuning)
         self.server.clients_changed.connect(self.onClientsChanged)
-        # Wire toggles
-        self.cmbPad.currentTextChanged.connect(lambda s: self.server.set_pad_target(s.lower()))
-        self.chkBed.toggled.connect(self.server.set_bed_when_real_zero)
-        self.chkFfbPassthrough.toggled.connect(self.server.set_ffb_passthrough_only)
 
         self.overlay = Overlay()
 
@@ -223,6 +219,9 @@ class MainWindow(QtWidgets.QWidget):
         self.chkFfbDebug.toggled.connect(self.grpFfb.setVisible)
         self.chkFreezeSteer.toggled.connect(self.server.set_freeze_steering)
         self.chkFfbPassthrough.toggled.connect(self.server.set_ffb_passthrough_only)
+        # New: pad target + bed toggles
+        self.cmbPad.currentTextChanged.connect(lambda s: self.server.set_pad_target(s.lower()))
+        self.chkBed.toggled.connect(self.server.set_bed_when_real_zero)
         self.chkHybrid.toggled.connect(self.server.set_hybrid_when_weak)
         self.chkMaskRealZero.toggled.connect(self.server.set_mask_real_zero)
         self.btnFfbTest.clicked.connect(self.server.ffb_test)
