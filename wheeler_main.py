@@ -96,10 +96,12 @@ class MainWindow(QtWidgets.QWidget):
         self.btnStart.clicked.connect(self.toggleServer)
         self.chkFfbDebug = QtWidgets.QCheckBox("FFB Debug")
         self.chkFreezeSteer = QtWidgets.QCheckBox("Freeze steering (debug)")
+        self.chkFfbPassthrough = QtWidgets.QCheckBox("Disable synth FFB (passthrough only)")
         self.chkFfbDebug.setChecked(False)
         top.addWidget(self.lblLan)
         top.addStretch(1)
         top.addWidget(self.chkFreezeSteer)
+        top.addWidget(self.chkFfbPassthrough)
         top.addWidget(self.chkFfbDebug)
         top.addWidget(self.btnStart)
 
@@ -198,6 +200,7 @@ class MainWindow(QtWidgets.QWidget):
         # Debug toggle wire-up
         self.chkFfbDebug.toggled.connect(self.grpFfb.setVisible)
         self.chkFreezeSteer.toggled.connect(self.server.set_freeze_steering)
+        self.chkFfbPassthrough.toggled.connect(self.server.set_ffb_passthrough_only)
 
         # Hotkeys (use QtGui.QShortcut)
         s1 = QtGui.QShortcut(QtGui.QKeySequence("F9"), self)

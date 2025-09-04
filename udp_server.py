@@ -66,6 +66,8 @@ class UDPServer(QtCore.QObject):
         self._last_ffb_log_ms = 0
         # Debug: freeze steering to neutral (ignore phone steering)
         self._freeze_steer = False
+        # Debug: disable synthesized rumble (only pass through real FFB)
+        self._ffb_passthrough_only = False
 
     def _on_ffb(self, L: float, R: float):
         self._ffbL = float(max(0.0, min(1.0, L)))
@@ -82,6 +84,11 @@ class UDPServer(QtCore.QObject):
     def set_freeze_steering(self, freeze: bool):
         self._freeze_steer = bool(freeze)
         LOG.log(f"🧊 Debug: freeze steering set to {self._freeze_steer}")
+
+    @QtCore.Slot(bool)
+    def set_ffb_passthrough_only(self, on: bool):
+        self._ffb_passthrough_only = bool(on)
+        LOG.log(f"🎛️ Debug: FFB passthrough-only set to {self._ffb_passthrough_only}")
 
     def start(self):
         if self._th and self._th.is_alive(): return
@@ -294,17 +301,21 @@ class UDPServer(QtCore.QObject):
                         LOG.log(f"⚠️ bridge send error: {e}")
                         self._last_dbg_ms = now_ms
 
-                # Real FFB if fresh (<300ms), else synthesize from telemetry
+                # Real FFB if fresh (<300ms), else (optionally) synthesize from telemetry
                 if now_ms - self._ffb_ms <= 300:
                     rumbleL = self._ffbL
                     rumbleR = self._ffbR
                 else:
-                    # Fallback (similar to windows UI):
-                    # left: baseline + throttle + lateral G
-                    # right: lateral G + brake
-                    g = max(0.0, min(1.0, abs(latG)))
-                    rumbleL = max(0.0, min(1.0, 0.12 + 0.65 * throttle + 0.22 * g))
-                    rumbleR = max(0.0, min(1.0, 0.50 * g + 0.50 * brake))
+                    if self._ffb_passthrough_only:
+                        rumbleL = 0.0
+                        rumbleR = 0.0
+                    else:
+                        # Fallback (similar to windows UI):
+                        # left: baseline + throttle + lateral G
+                        # right: lateral G + brake
+                        g = max(0.0, min(1.0, abs(latG)))
+                        rumbleL = max(0.0, min(1.0, 0.12 + 0.65 * throttle + 0.22 * g))
+                        rumbleR = max(0.0, min(1.0, 0.50 * g + 0.50 * brake))
 
                 # UI/overlay
                 self.telemetry.emit(x_proc, throttle, brake, latG, seq, rumbleL, rumbleR)
