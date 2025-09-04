@@ -94,7 +94,12 @@ class MainWindow(QtWidgets.QWidget):
         self.lblLan = QtWidgets.QLabel(f"{list_ipv4()[0]}:8765")
         self.btnStart = QtWidgets.QPushButton("STOP")
         self.btnStart.clicked.connect(self.toggleServer)
-        top.addWidget(self.lblLan); top.addStretch(1); top.addWidget(self.btnStart)
+        self.chkFfbDebug = QtWidgets.QCheckBox("FFB Debug")
+        self.chkFfbDebug.setChecked(False)
+        top.addWidget(self.lblLan)
+        top.addStretch(1)
+        top.addWidget(self.chkFfbDebug)
+        top.addWidget(self.btnStart)
 
         # Left column: QR + Inputs
         leftCol = QtWidgets.QVBoxLayout()
@@ -149,6 +154,21 @@ class MainWindow(QtWidgets.QWidget):
 
         rightCol.addWidget(boxOverlay)
 
+        # FFB Debug (dev only)
+        self.grpFfb = QtWidgets.QGroupBox("FFB Debug (dev)")
+        self.grpFfb.setVisible(False)
+        ffbGrid = QtWidgets.QGridLayout(self.grpFfb)
+        ffbGrid.setHorizontalSpacing(12); ffbGrid.setVerticalSpacing(6)
+        self.lblFfbLVal = QtWidgets.QLabel("0%")
+        self.lblFfbLVal.setAlignment(Qt.AlignRight)
+        self.prFfbL = QtWidgets.QProgressBar(); self.prFfbL.setRange(0,1000); self.prFfbL.setTextVisible(False)
+        self.lblFfbRVal = QtWidgets.QLabel("0%")
+        self.lblFfbRVal.setAlignment(Qt.AlignRight)
+        self.prFfbR = QtWidgets.QProgressBar(); self.prFfbR.setRange(0,1000); self.prFfbR.setTextVisible(False)
+        ffbGrid.addWidget(QtWidgets.QLabel("Left (low freq)"), 0, 0); ffbGrid.addWidget(self.lblFfbLVal, 0, 1); ffbGrid.addWidget(self.prFfbL, 1, 0, 1, 2)
+        ffbGrid.addWidget(QtWidgets.QLabel("Right (high freq)"), 2, 0); ffbGrid.addWidget(self.lblFfbRVal, 2, 1); ffbGrid.addWidget(self.prFfbR, 3, 0, 1, 2)
+        rightCol.addWidget(self.grpFfb)
+
         labClients = QtWidgets.QLabel("Client"); rightCol.addWidget(labClients)
         self.lstClients = QtWidgets.QListWidget(); rightCol.addWidget(self.lstClients, 1)
 
@@ -172,6 +192,9 @@ class MainWindow(QtWidgets.QWidget):
         self.spinGamma.valueChanged.connect(self.overlay.set_curve_gamma)
         self.spinAlpha.valueChanged.connect(self.overlay.set_alpha_strength)
         self.btnResetOverlay.clicked.connect(self.overlay.reset_all)
+
+        # Debug toggle wire-up
+        self.chkFfbDebug.toggled.connect(self.grpFfb.setVisible)
 
         # Hotkeys (use QtGui.QShortcut)
         s1 = QtGui.QShortcut(QtGui.QKeySequence("F9"), self)
@@ -243,6 +266,17 @@ class MainWindow(QtWidgets.QWidget):
         self.lblBrkVal.setText(f"{int(brake*100):d}%")
         # Feed overlay
         self.overlay.set_telemetry(x, latG)
+
+        # Update FFB debug (visible only if toggled)
+        try:
+            l = max(0.0, min(1.0, float(rumbleL)))
+            r = max(0.0, min(1.0, float(rumbleR)))
+            self.prFfbL.setValue(int(l * 1000))
+            self.prFfbR.setValue(int(r * 1000))
+            self.lblFfbLVal.setText(f"{int(l*100):d}%")
+            self.lblFfbRVal.setText(f"{int(r*100):d}%")
+        except Exception:
+            pass
 
     def onButtons(self, btns: dict):
         pass
