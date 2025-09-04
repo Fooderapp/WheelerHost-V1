@@ -3,7 +3,7 @@
 import subprocess, threading, json, os, sys, shutil
 
 class XInputBridgeProc:
-    def __init__(self, exe_path=None):
+    def __init__(self, exe_path=None, target: str = "x360"):
         # Resolve bridge exe
         exe = exe_path or self._default_path()
         if not exe or not os.path.isfile(exe):
@@ -11,6 +11,7 @@ class XInputBridgeProc:
         self._exe = exe
         self._p = None
         self._ffb_cb = None
+        self._target = (target or "x360").lower().strip()
         self._start()
 
     def _default_path(self):
@@ -43,6 +44,13 @@ class XInputBridgeProc:
         )
         self._th = threading.Thread(target=self._read_stdout, daemon=True)
         self._th.start()
+        # Send target selection as control message if not default
+        try:
+            if self._p and self._p.stdin and self._target in ("x360","ds4"):
+                self._p.stdin.write(json.dumps({"type":"target","value": self._target}) + "\n")
+                self._p.stdin.flush()
+        except Exception:
+            pass
 
     def set_feedback_callback(self, cb):
         """cb(L:float, R:float)"""

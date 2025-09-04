@@ -410,8 +410,11 @@ class UDPServer(QtCore.QObject):
         """Select and initialize input bridge (ViGEm or vJoy)."""
         # Try ViGEm first
         try:
-            self._bridge = XInputBridgeProc()
-            self._bridge_name = "ViGEmBridge"
+            import os
+            target = os.environ.get("WHEELER_PAD", "x360").strip().lower()
+            if target not in ("x360","ds4"): target = "x360"
+            self._bridge = XInputBridgeProc(target=target)
+            self._bridge_name = f"ViGEmBridge-{target.upper()}"
             self._ffbL = 0.0; self._ffbR = 0.0; self._ffb_ms = 0
             self._bridge.set_feedback_callback(self._on_ffb)
             return
