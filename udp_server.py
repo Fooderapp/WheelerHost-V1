@@ -64,6 +64,8 @@ class UDPServer(QtCore.QObject):
         self._last_dbg_ms = 0
         # low-rate debug for force feedback values coming from the bridge
         self._last_ffb_log_ms = 0
+        # Debug: freeze steering to neutral (ignore phone steering)
+        self._freeze_steer = False
 
     def _on_ffb(self, L: float, R: float):
         self._ffbL = float(max(0.0, min(1.0, L)))
@@ -74,6 +76,12 @@ class UDPServer(QtCore.QObject):
         if now_ms - self._last_ffb_log_ms > 500:
             LOG.log(f"⬅️ FFB rumble from game L={self._ffbL:.2f} R={self._ffbR:.2f}")
             self._last_ffb_log_ms = now_ms
+
+    # ---- debug knobs ----
+    @QtCore.Slot(bool)
+    def set_freeze_steering(self, freeze: bool):
+        self._freeze_steer = bool(freeze)
+        LOG.log(f"🧊 Debug: freeze steering set to {self._freeze_steer}")
 
     def start(self):
         if self._th and self._th.is_alive(): return
@@ -267,6 +275,8 @@ class UDPServer(QtCore.QObject):
                 # Shape steering and prefer DPAD/LS-x if provided
                 x_proc = self._apply_filters(x_raw)
                 use_lx = ls_x if abs(ls_x) > 1e-6 else x_proc
+                if self._freeze_steer:
+                    use_lx = 0.0
                 use_ly = -ls_y  # invert Y (DIRT-like)
                 rt = int(max(0.0, min(1.0, throttle)) * 255)
                 lt = int(max(0.0, min(1.0, brake   )) * 255)
