@@ -284,12 +284,17 @@ class UDPServer(QtCore.QObject):
                         LOG.log(f"⚠️ bridge send error: {e}")
                         self._last_dbg_ms = now_ms
 
-                # Real FFB if fresh (<300ms), else zero
+                # Real FFB if fresh (<300ms), else synthesize from telemetry
                 if now_ms - self._ffb_ms <= 300:
                     rumbleL = self._ffbL
                     rumbleR = self._ffbR
                 else:
-                    rumbleL = 0.0; rumbleR = 0.0
+                    # Fallback (similar to windows UI):
+                    # left: baseline + throttle + lateral G
+                    # right: lateral G + brake
+                    g = max(0.0, min(1.0, abs(latG)))
+                    rumbleL = max(0.0, min(1.0, 0.12 + 0.65 * throttle + 0.22 * g))
+                    rumbleR = max(0.0, min(1.0, 0.50 * g + 0.50 * brake))
 
                 # UI/overlay
                 self.telemetry.emit(x_proc, throttle, brake, latG, seq, rumbleL, rumbleR)
