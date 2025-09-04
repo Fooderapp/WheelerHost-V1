@@ -98,12 +98,15 @@ class MainWindow(QtWidgets.QWidget):
         self.chkFreezeSteer = QtWidgets.QCheckBox("Freeze steering (debug)")
         self.chkFfbPassthrough = QtWidgets.QCheckBox("Disable synth FFB (passthrough only)")
         self.chkHybrid = QtWidgets.QCheckBox("Hybrid synth when real weak")
+        self.chkMaskRealZero = QtWidgets.QCheckBox("Mask real=0 as none")
+        self.chkMaskRealZero.setChecked(True)
         self.chkFfbDebug.setChecked(False)
         top.addWidget(self.lblLan)
         top.addStretch(1)
         top.addWidget(self.chkFreezeSteer)
         top.addWidget(self.chkFfbPassthrough)
         top.addWidget(self.chkHybrid)
+        top.addWidget(self.chkMaskRealZero)
         top.addWidget(self.chkFfbDebug)
         top.addWidget(self.btnStart)
 
@@ -208,6 +211,7 @@ class MainWindow(QtWidgets.QWidget):
         self.chkFreezeSteer.toggled.connect(self.server.set_freeze_steering)
         self.chkFfbPassthrough.toggled.connect(self.server.set_ffb_passthrough_only)
         self.chkHybrid.toggled.connect(self.server.set_hybrid_when_weak)
+        self.chkMaskRealZero.toggled.connect(self.server.set_mask_real_zero)
         self.btnFfbTest.clicked.connect(self.server.ffb_test)
 
         # Hotkeys (use QtGui.QShortcut)

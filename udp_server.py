@@ -70,7 +70,9 @@ class UDPServer(QtCore.QObject):
         # Debug: disable synthesized rumble (only pass through real FFB)
         self._ffb_passthrough_only = False
         # Debug: if real FFB is "weak" (both channels near zero), blend in synth fallback
-        self._hybrid_when_weak = True
+        self._hybrid_when_weak = False
+        # Debug: mask misleading "real but zero" events as none
+        self._mask_real_zero = True
 
     def _on_ffb(self, L: float, R: float):
         self._ffbL = float(max(0.0, min(1.0, L)))
@@ -124,6 +126,11 @@ class UDPServer(QtCore.QObject):
     def set_hybrid_when_weak(self, on: bool):
         self._hybrid_when_weak = bool(on)
         LOG.log(f"🧪 Debug: Hybrid when weak set to {self._hybrid_when_weak}")
+
+    @QtCore.Slot(bool)
+    def set_mask_real_zero(self, on: bool):
+        self._mask_real_zero = bool(on)
+        LOG.log(f"🎚️ Debug: Mask real-zero set to {self._mask_real_zero}")
 
     def start(self):
         if self._th and self._th.is_alive(): return
@@ -341,6 +348,11 @@ class UDPServer(QtCore.QObject):
                     rumbleL = float(self._ffbL)
                     rumbleR = float(self._ffbR)
                     src = "real"
+                    # If both channels are effectively zero, optionally mask as none
+                    if self._mask_real_zero and (rumbleL < 0.005 and rumbleR < 0.005):
+                        src = "none"
+                        rumbleL = 0.0
+                        rumbleR = 0.0
                     # If real is very weak and hybrid enabled (and not hard passthrough-only), mix in synth
                     if self._hybrid_when_weak and not self._ffb_passthrough_only:
                         weak = (rumbleL < 0.03 and rumbleR < 0.03)
