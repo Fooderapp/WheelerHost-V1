@@ -171,8 +171,10 @@ class MainWindow(QtWidgets.QWidget):
         self.prFfbR = QtWidgets.QProgressBar(); self.prFfbR.setRange(0,1000); self.prFfbR.setTextVisible(False)
         ffbGrid.addWidget(QtWidgets.QLabel("Left (low freq)"), 0, 0); ffbGrid.addWidget(self.lblFfbLVal, 0, 1); ffbGrid.addWidget(self.prFfbL, 1, 0, 1, 2)
         ffbGrid.addWidget(QtWidgets.QLabel("Right (high freq)"), 2, 0); ffbGrid.addWidget(self.lblFfbRVal, 2, 1); ffbGrid.addWidget(self.prFfbR, 3, 0, 1, 2)
+        self.lblFfbSrc = QtWidgets.QLabel("Source: –")
+        ffbGrid.addWidget(self.lblFfbSrc, 4, 0, 1, 2)
         self.btnFfbTest = QtWidgets.QPushButton("FFB Test (2s)")
-        ffbGrid.addWidget(self.btnFfbTest, 4, 0, 1, 2)
+        ffbGrid.addWidget(self.btnFfbTest, 5, 0, 1, 2)
         rightCol.addWidget(self.grpFfb)
 
         labClients = QtWidgets.QLabel("Client"); rightCol.addWidget(labClients)
@@ -265,7 +267,7 @@ class MainWindow(QtWidgets.QWidget):
         self.overlay.reset_all()
 
     # ----- slots from server -----
-    def onTelemetry(self, x, throttle, brake, latG, seq_any, rumbleL, rumbleR):
+    def onTelemetry(self, x, throttle, brake, latG, seq_any, rumbleL, rumbleR, src):
         steer_bar = int((x * 0.5 + 0.5) * 1000)
         self.prSteer.setValue(max(0, min(1000, steer_bar)))
         self.lblSteerVal.setText(f"{x:+.2f}")
@@ -284,6 +286,10 @@ class MainWindow(QtWidgets.QWidget):
             self.prFfbR.setValue(int(r * 1000))
             self.lblFfbLVal.setText(f"{int(l*100):d}%")
             self.lblFfbRVal.setText(f"{int(r*100):d}%")
+            s = str(src).lower() if isinstance(src, (str, bytes)) else ""
+            if   s == "real":  self.lblFfbSrc.setText("Source: real")
+            elif s == "synth": self.lblFfbSrc.setText("Source: synth")
+            else:               self.lblFfbSrc.setText("Source: none")
         except Exception:
             pass
 

@@ -38,7 +38,7 @@ class ClientState:
     neutral_sent: bool = False
 
 class UDPServer(QtCore.QObject):
-    telemetry = QtCore.Signal(float, float, float, float, object, float, float)  # x,thr,brk,latG,seq,L,R
+    telemetry = QtCore.Signal(float, float, float, float, object, float, float, str)  # x,thr,brk,latG,seq,L,R,src
     buttons   = QtCore.Signal(dict)
     tuning    = QtCore.Signal(dict)
     clients_changed = QtCore.Signal(list)
@@ -333,10 +333,12 @@ class UDPServer(QtCore.QObject):
                 if now_ms - self._ffb_ms <= 300:
                     rumbleL = self._ffbL
                     rumbleR = self._ffbR
+                    src = "real"
                 else:
                     if self._ffb_passthrough_only:
                         rumbleL = 0.0
                         rumbleR = 0.0
+                        src = "none"
                     else:
                         # Fallback (similar to windows UI):
                         # left: baseline + throttle + lateral G
@@ -344,9 +346,10 @@ class UDPServer(QtCore.QObject):
                         g = max(0.0, min(1.0, abs(latG)))
                         rumbleL = max(0.0, min(1.0, 0.12 + 0.65 * throttle + 0.22 * g))
                         rumbleR = max(0.0, min(1.0, 0.50 * g + 0.50 * brake))
+                        src = "synth"
 
                 # UI/overlay
-                self.telemetry.emit(x_proc, throttle, brake, latG, seq, rumbleL, rumbleR)
+                self.telemetry.emit(x_proc, throttle, brake, latG, seq, rumbleL, rumbleR, src)
                 self.buttons.emit(btns)
 
                 # Reply to phone (includes real rumble)
