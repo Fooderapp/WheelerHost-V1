@@ -95,6 +95,9 @@ class MainWindow(QtWidgets.QWidget):
         self.btnStart = QtWidgets.QPushButton("STOP")
         self.btnStart.clicked.connect(self.toggleServer)
         self.chkFfbDebug = QtWidgets.QCheckBox("FFB Debug")
+        # New: Edit overlay toggle (mac: keep overlay click‑through by default)
+        self.chkEditOverlay = QtWidgets.QCheckBox("Edit overlay (clickable)")
+        self.chkEditOverlay.setChecked(False)
         self.chkFreezeSteer = QtWidgets.QCheckBox("Freeze steering (debug)")
         self.chkFfbPassthrough = QtWidgets.QCheckBox("Disable synth FFB (passthrough only)")
         self.chkFfbPassthrough.setChecked(True)
@@ -116,6 +119,7 @@ class MainWindow(QtWidgets.QWidget):
         top.addWidget(self.chkHybrid)
         top.addWidget(self.chkMaskRealZero)
         top.addWidget(self.chkBed)
+        top.addWidget(self.chkEditOverlay)
         top.addWidget(self.chkFfbDebug)
         top.addWidget(self.btnStart)
 
@@ -214,6 +218,8 @@ class MainWindow(QtWidgets.QWidget):
         self.spinGamma.valueChanged.connect(self.overlay.set_curve_gamma)
         self.spinAlpha.valueChanged.connect(self.overlay.set_alpha_strength)
         self.btnResetOverlay.clicked.connect(self.overlay.reset_all)
+        # Edit overlay click‑through control
+        self.chkEditOverlay.toggled.connect(self.overlay.set_input_enabled)
 
         # Debug toggle wire-up
         self.chkFfbDebug.toggled.connect(self.grpFfb.setVisible)
@@ -259,23 +265,13 @@ class MainWindow(QtWidgets.QWidget):
         self.txtLog.moveCursor(QtGui.QTextCursor.End)
 
     # ----- overlay edit state: enable mouse while main window is visible -----
+    # Remove implicit overlay mouse grabbing; controlled via the checkbox now
     def showEvent(self, e):
         super().showEvent(e)
-        self._sync_overlay_drag()
-
     def hideEvent(self, e):
         super().hideEvent(e)
-        self._sync_overlay_drag()
-
     def changeEvent(self, e):
         super().changeEvent(e)
-        if e.type() in (QtCore.QEvent.ActivationChange, QtCore.QEvent.WindowStateChange, QtCore.QEvent.ZOrderChange):
-            self._sync_overlay_drag()
-
-    def _sync_overlay_drag(self):
-        # Allow dragging whenever the main window is visible (regardless of focus)
-        enable = self.isVisible()
-        self.overlay.set_input_enabled(enable)
 
     # ----- hotkeys -----
     def _toggleOverlayVisible(self):

@@ -1,0 +1,6 @@
+PySide6
+PySide6-Addons
+qrcode
+pillow
+pyvjoy
+

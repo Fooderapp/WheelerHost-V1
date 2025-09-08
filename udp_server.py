@@ -12,6 +12,10 @@ try:
     from vjoy_bridge import VJoyBridge  # optional
 except Exception:
     VJoyBridge = None  # type: ignore
+try:
+    from dk_bridge_proc import DKBridgeProc  # optional (macOS DriverKit bridge helper)
+except Exception:
+    DKBridgeProc = None  # type: ignore
 
 try:
     from macos_gamepad_bridge import MacOSGamepadBridge  # cross-platform
@@ -436,14 +440,38 @@ class UDPServer(QtCore.QObject):
         LOG.log("🛑 UDP server stopped")
 
     def _init_bridge(self):
-        """Select and initialize input bridge (ViGEm, vJoy, or cross-platform)."""
+        """Select and initialize input bridge with comprehensive platform support."""
         import os
         
         # Check platform
         system = platform.system().lower()
         
+        # macOS: Try multiple DriverKit approaches, then cross-platform fallback
+        if system == "darwin":  # macOS
+            # First try: DKBridgeProc (external executable approach)
+            try:
+                if DKBridgeProc is not None:
+                    self._bridge = DKBridgeProc()
+                    self._bridge_name = "DriverKitBridge"
+                    LOG.log(f"Using DriverKit bridge (external) for macOS")
+                    return
+            except Exception as e:
+                LOG.log(f"DriverKit bridge (external) failed: {e}")
+            
+            # Second try: DriverKitGamepadBridge (direct IOKit approach)
+            try:
+                if DriverKitGamepadBridge is not None:
+                    self._bridge = DriverKitGamepadBridge()
+                    self._bridge_name = "DriverKit-macOS"
+                    self._ffbL = 0.0; self._ffbR = 0.0; self._ffb_ms = 0
+                    self._bridge.set_feedback_callback(self._on_ffb)
+                    LOG.log(f"Using DriverKit bridge (direct) for macOS")
+                    return
+            except Exception as e:
+                LOG.log(f"DriverKit bridge (direct) failed: {e}")
+        
+        # Windows: Try ViGEm first, then vJoy
         if system == "windows":
-            # Windows: Try ViGEm first, then vJoy
             try:
                 target = os.environ.get("WHEELER_PAD", "x360").strip().lower()
                 if target not in ("x360","ds4"): target = "x360"
@@ -465,19 +493,6 @@ class UDPServer(QtCore.QObject):
                 return
             except Exception as e:
                 LOG.log(f"vJoy bridge failed: {e}")
-        
-        # macOS: Try DriverKit bridge first, then cross-platform bridge
-        if system == "darwin":  # macOS
-            try:
-                if DriverKitGamepadBridge is not None:
-                    self._bridge = DriverKitGamepadBridge()
-                    self._bridge_name = "DriverKit-macOS"
-                    self._ffbL = 0.0; self._ffbR = 0.0; self._ffb_ms = 0
-                    self._bridge.set_feedback_callback(self._on_ffb)
-                    LOG.log(f"Using DriverKit bridge for macOS")
-                    return
-            except Exception as e:
-                LOG.log(f"DriverKit bridge failed: {e}")
         
         # macOS, Linux, or Windows fallback: Use cross-platform bridge
         try:
