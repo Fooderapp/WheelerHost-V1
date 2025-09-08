@@ -12,6 +12,10 @@ try:
     from vjoy_bridge import VJoyBridge  # optional
 except Exception:
     VJoyBridge = None  # type: ignore
+try:
+    from dk_bridge_proc import DKBridgeProc  # optional (macOS DriverKit bridge helper)
+except Exception:
+    DKBridgeProc = None  # type: ignore
 
 # ---------- Logging ----------
 class Logger(QtCore.QObject):
@@ -426,8 +430,16 @@ class UDPServer(QtCore.QObject):
         LOG.log("🛑 UDP server stopped")
 
     def _init_bridge(self):
-        """Select and initialize input bridge (ViGEm or vJoy)."""
-        # Try ViGEm first
+        """Select and initialize input bridge (DriverKit on mac, ViGEm on Windows, else vJoy)."""
+        # macOS: prefer DriverKit helper
+        try:
+            if platform.system() == "Darwin" and DKBridgeProc is not None:
+                self._bridge = DKBridgeProc()
+                self._bridge_name = "DriverKitBridge"
+                return
+        except Exception:
+            pass
+        # Windows: try ViGEm first
         try:
             import os
             target = os.environ.get("WHEELER_PAD", "x360").strip().lower()
