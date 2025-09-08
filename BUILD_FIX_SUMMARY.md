@@ -46,6 +46,7 @@ cd DriverKit/WheelerGamepadDriver
 xcodebuild -project WheelerGamepadDriver.xcodeproj \
            -scheme WheelerGamepadDriver \
            -configuration Release \
+           -allowProvisioningUpdates \
            DEVELOPMENT_TEAM=TY24SSPQG3 \
            build
 ```

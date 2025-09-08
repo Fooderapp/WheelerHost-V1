@@ -126,7 +126,7 @@ build_extension() {
     
     # Build the extension
     local dev_team=$(get_dev_team)
-    local build_args="-project WheelerGamepadDriver.xcodeproj -scheme WheelerGamepadDriver -configuration Release"
+    local build_args="-project WheelerGamepadDriver.xcodeproj -scheme WheelerGamepadDriver -configuration Release -allowProvisioningUpdates"
     
     if [[ -n "$dev_team" ]]; then
         build_args="$build_args DEVELOPMENT_TEAM=$dev_team"
