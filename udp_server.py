@@ -13,6 +13,16 @@ try:
 except Exception:
     VJoyBridge = None  # type: ignore
 
+try:
+    from macos_gamepad_bridge import MacOSGamepadBridge  # cross-platform
+except Exception:
+    MacOSGamepadBridge = None  # type: ignore
+
+try:
+    from driverkit_gamepad_bridge import DriverKitGamepadBridge  # macOS DriverKit
+except Exception:
+    DriverKitGamepadBridge = None  # type: ignore
+
 # ---------- Logging ----------
 class Logger(QtCore.QObject):
     line = QtCore.Signal(str)
@@ -426,28 +436,64 @@ class UDPServer(QtCore.QObject):
         LOG.log("🛑 UDP server stopped")
 
     def _init_bridge(self):
-        """Select and initialize input bridge (ViGEm or vJoy)."""
-        # Try ViGEm first
+        """Select and initialize input bridge (ViGEm, vJoy, or cross-platform)."""
+        import os
+        
+        # Check platform
+        system = platform.system().lower()
+        
+        if system == "windows":
+            # Windows: Try ViGEm first, then vJoy
+            try:
+                target = os.environ.get("WHEELER_PAD", "x360").strip().lower()
+                if target not in ("x360","ds4"): target = "x360"
+                self._bridge = XInputBridgeProc(target=target)
+                self._bridge_name = f"ViGEmBridge-{target.upper()}"
+                self._ffbL = 0.0; self._ffbR = 0.0; self._ffb_ms = 0
+                self._bridge.set_feedback_callback(self._on_ffb)
+                return
+            except Exception as e:
+                LOG.log(f"ViGEm bridge failed: {e}")
+            
+            # Fall back to vJoy if available
+            try:
+                if VJoyBridge is None:
+                    raise RuntimeError("vJoy bridge not available")
+                self._bridge = VJoyBridge(device_id=1)
+                self._bridge_name = "vJoy"
+                # no FFB available via vJoy; keep passthrough-only off to allow synth fallback
+                return
+            except Exception as e:
+                LOG.log(f"vJoy bridge failed: {e}")
+        
+        # macOS: Try DriverKit bridge first, then cross-platform bridge
+        if system == "darwin":  # macOS
+            try:
+                if DriverKitGamepadBridge is not None:
+                    self._bridge = DriverKitGamepadBridge()
+                    self._bridge_name = "DriverKit-macOS"
+                    self._ffbL = 0.0; self._ffbR = 0.0; self._ffb_ms = 0
+                    self._bridge.set_feedback_callback(self._on_ffb)
+                    LOG.log(f"Using DriverKit bridge for macOS")
+                    return
+            except Exception as e:
+                LOG.log(f"DriverKit bridge failed: {e}")
+        
+        # macOS, Linux, or Windows fallback: Use cross-platform bridge
         try:
-            import os
-            target = os.environ.get("WHEELER_PAD", "x360").strip().lower()
-            if target not in ("x360","ds4"): target = "x360"
-            self._bridge = XInputBridgeProc(target=target)
-            self._bridge_name = f"ViGEmBridge-{target.upper()}"
+            if MacOSGamepadBridge is None:
+                raise RuntimeError("Cross-platform bridge not available")
+            self._bridge = MacOSGamepadBridge(device_id=1)
+            self._bridge_name = f"CrossPlatform-{system.title()}"
             self._ffbL = 0.0; self._ffbR = 0.0; self._ffb_ms = 0
             self._bridge.set_feedback_callback(self._on_ffb)
+            LOG.log(f"Using cross-platform bridge for {system}")
             return
         except Exception as e:
-            pass
-        # Fall back to vJoy if available
-        try:
-            if VJoyBridge is None:
-                raise RuntimeError("vJoy bridge not available")
-            self._bridge = VJoyBridge(device_id=1)
-            self._bridge_name = "vJoy"
-            # no FFB available via vJoy; keep passthrough-only off to allow synth fallback
-            return
-        except Exception as e:
-            raise RuntimeError(
-                "No input bridge available. Install ViGEm (ViGEmBridge.exe) or vJoy + pyvjoy."
-            )
+            LOG.log(f"Cross-platform bridge failed: {e}")
+        
+        raise RuntimeError(
+            f"No input bridge available for {system}. "
+            f"On Windows: Install ViGEm (ViGEmBridge.exe) or vJoy + pyvjoy. "
+            f"On macOS/Linux: Ensure pynput and evdev are installed."
+        )
