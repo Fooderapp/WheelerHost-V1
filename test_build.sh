@@ -28,12 +28,12 @@ fi
 echo "✅ Xcode project structure looks good"
 
 echo "🏗️  Testing build with your team ID: $TEAM_ID"
-echo "Command: xcodebuild -project WheelerGamepadDriver.xcodeproj -scheme WheelerGamepadDriver -configuration Release DEVELOPMENT_TEAM=$TEAM_ID build"
+echo "Command: xcodebuild -project WheelerGamepadDriver.xcodeproj -scheme WheelerGamepadDriver -configuration Release -allowProvisioningUpdates DEVELOPMENT_TEAM=$TEAM_ID build"
 
 # Test the build command (this will work on macOS with Xcode installed)
 if command -v xcodebuild >/dev/null 2>&1; then
     echo "✅ xcodebuild found, attempting build..."
-    xcodebuild -project WheelerGamepadDriver.xcodeproj -scheme WheelerGamepadDriver -configuration Release DEVELOPMENT_TEAM=$TEAM_ID build
+    xcodebuild -project WheelerGamepadDriver.xcodeproj -scheme WheelerGamepadDriver -configuration Release -allowProvisioningUpdates DEVELOPMENT_TEAM=$TEAM_ID build
     echo "🎉 Build completed successfully!"
 else
     echo "⚠️  xcodebuild not found (this is expected in non-macOS environments)"
@@ -45,7 +45,7 @@ echo "🎮 Wheeler Gamepad DriverKit Extension Ready!"
 echo "============================================="
 echo "To build on macOS:"
 echo "1. Navigate to: DriverKit/WheelerGamepadDriver/"
-echo "2. Run: xcodebuild -project WheelerGamepadDriver.xcodeproj -scheme WheelerGamepadDriver -configuration Release DEVELOPMENT_TEAM=TY24SSPQG3 build"
+echo "2. Run: xcodebuild -project WheelerGamepadDriver.xcodeproj -scheme WheelerGamepadDriver -configuration Release -allowProvisioningUpdates DEVELOPMENT_TEAM=TY24SSPQG3 build"
 echo "3. Or use the automated installer: ./install_wheeler_gamepad.sh --dev-team TY24SSPQG3"
 echo ""
 echo "The build will create: WheelerGamepadDriver.dext"
