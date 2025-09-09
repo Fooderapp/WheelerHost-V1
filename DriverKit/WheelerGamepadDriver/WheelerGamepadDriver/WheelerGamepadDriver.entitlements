@@ -2,13 +2,29 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>com.apple.developer.driverkit</key>
-	<true/>
-	<key>com.apple.developer.driverkit.family.hid.device</key>
-	<true/>
-	<key>com.apple.developer.driverkit.transport.hid</key>
-	<true/>
-	<key>com.apple.developer.driverkit.userclient-access</key>
-	<true/>
+    <!-- Remove this if you don’t actually need Sign in with Apple -->
+    <key>com.apple.developer.applesignin</key>
+    <array>
+        <!-- left blank → does nothing -->
+    </array>
+
+    <key>com.apple.developer.driverkit</key>
+    <true/>
+
+    <!-- Only needed if you want *any* third-party apps to connect, 
+         otherwise you can safely drop this key -->
+    <key>com.apple.developer.driverkit.allow-third-party-userclients</key>
+    <false/>
+
+    <key>com.apple.developer.driverkit.family.hid.device</key>
+    <true/>
+
+    <key>com.apple.developer.driverkit.transport.hid</key>
+    <true/>
+
+    <key>com.apple.developer.driverkit.userclient-access</key>
+    <array>
+        <string>J866WVV5SP.com.alphacurve.WheelerHIDDriver</string>
+    </array>
 </dict>
 </plist>

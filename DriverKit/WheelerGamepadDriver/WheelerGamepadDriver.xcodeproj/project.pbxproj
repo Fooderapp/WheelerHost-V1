@@ -12,8 +12,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		A1234567890ABCDE0 /* WheelerGamepadDriver.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = WheelerGamepadDriver.cpp; sourceTree = "<group>"; };
-		A1234567890ABCDE2 /* WheelerGamepadDriver.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = WheelerGamepadDriver.h; sourceTree = "<group>"; };
+		A1234567890ABCDE0 /* WheelerGamepadDriver.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = GamepadModule/WheelerGamepadDriver.cpp; sourceTree = "<group>"; };
+		A1234567890ABCDE2 /* WheelerGamepadDriver.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GamepadModule/WheelerGamepadDriver.h; sourceTree = "<group>"; };
 		A1234567890ABCDE4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A1234567890ABCDE5 /* WheelerGamepadDriver.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WheelerGamepadDriver.entitlements; sourceTree = "<group>"; };
 		A1234567890ABCDE6 /* WheelerGamepadDriver.dext */ = {isa = PBXFileReference; explicitFileType = "wrapper.driver-extension"; includeInIndex = 0; path = WheelerGamepadDriver.dext; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -46,7 +46,7 @@
 				A1234567890ABCDE4 /* Info.plist */,
 				A1234567890ABCDE5 /* WheelerGamepadDriver.entitlements */,
 			);
-			path = WheelerGamepadDriver;
+			path = GamepadModule;
 			sourceTree = "<group>";
 		};
 		A1234567890ABCDEA /* Products */ = {
@@ -95,7 +95,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastUpgradeCheck = 1500;
+				LastUpgradeCheck = 1620;
 				TargetAttributes = {
 					A1234567890ABCDEC = {
 						CreatedOnToolsVersion = 15.0;
@@ -124,6 +124,7 @@
 		A1234567890ABCDED /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
+			files = (
 			files = (
 				A1234567890ABCDE1 /* WheelerGamepadDriver.cpp in Sources */,
 			);
@@ -248,9 +249,14 @@
 		A1234567890ABCDF3 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ANALYZER_DEADCODE_DEADSTORES = NO;
+				CLANG_ANALYZER_DIVIDE_BY_ZERO = NO;
+				CLANG_ANALYZER_NULL_DEREFERENCE = NO;
 				CODE_SIGN_ENTITLEMENTS = WheelerGamepadDriver/WheelerGamepadDriver.entitlements;
-				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = J866WVV5SP;
 				DRIVERKIT_DEPLOYMENT_TARGET = 19.0;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = WheelerGamepadDriver/Info.plist;
@@ -260,11 +266,14 @@
 				INFOPLIST_KEY_IOKitPersonalities_WheelerGamepadDriver_IOMatchCategory = IODefaultMatchCategory;
 				INFOPLIST_KEY_IOKitPersonalities_WheelerGamepadDriver_IOProviderClass = IOService;
 				INFOPLIST_KEY_IOKitPersonalities_WheelerGamepadDriver_IOUserClass = WheelerGamepadDriverUserClient;
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
 				MARKETING_VERSION = 1.0;
 				MODULE_NAME = com.wheeler.gamepad.driver;
 				MODULE_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.wheeler.gamepad.driver;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alphacurve.WheelerHIDDriver;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				RUN_CLANG_STATIC_ANALYZER = YES;
 				SKIP_INSTALL = YES;
 			};
 			name = Debug;
@@ -273,8 +282,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = WheelerGamepadDriver/WheelerGamepadDriver.entitlements;
-				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = J866WVV5SP;
 				DRIVERKIT_DEPLOYMENT_TARGET = 19.0;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = WheelerGamepadDriver/Info.plist;
@@ -284,11 +295,13 @@
 				INFOPLIST_KEY_IOKitPersonalities_WheelerGamepadDriver_IOMatchCategory = IODefaultMatchCategory;
 				INFOPLIST_KEY_IOKitPersonalities_WheelerGamepadDriver_IOProviderClass = IOService;
 				INFOPLIST_KEY_IOKitPersonalities_WheelerGamepadDriver_IOUserClass = WheelerGamepadDriverUserClient;
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
 				MARKETING_VERSION = 1.0;
 				MODULE_NAME = com.wheeler.gamepad.driver;
 				MODULE_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.wheeler.gamepad.driver;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alphacurve.WheelerHIDDriver;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;
 			};
 			name = Release;

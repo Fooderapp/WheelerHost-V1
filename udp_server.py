@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from typing import Optional, Tuple, Dict
 from PySide6 import QtCore
 
-from xinput_bridge_proc import XInputBridgeProc
+from vigem_bridge import ViGEmBridge, XGamepad
+from hid_bridge import HIDBridge
 try:
     from vjoy_bridge import VJoyBridge  # optional
 except Exception:
@@ -470,19 +471,25 @@ class UDPServer(QtCore.QObject):
             except Exception as e:
                 LOG.log(f"DriverKit bridge (direct) failed: {e}")
         
-        # Windows: Try ViGEm first, then vJoy
+        # Windows: Try ViGEm, then HID, then vJoy
         if system == "windows":
+            bridge_type = os.environ.get("WHEELER_BRIDGE", "vigem").strip().lower()
+            target = os.environ.get("WHEELER_PAD", "x360").strip().lower()
+            if target not in ("x360","ds4"): target = "x360"
             try:
-                target = os.environ.get("WHEELER_PAD", "x360").strip().lower()
-                if target not in ("x360","ds4"): target = "x360"
-                self._bridge = XInputBridgeProc(target=target)
-                self._bridge_name = f"ViGEmBridge-{target.upper()}"
+                if bridge_type == "vigem":
+                    self._bridge = ViGEmBridge(target=target)
+                    self._bridge_name = f"ViGEmBridge-{target.upper()}"
+                elif bridge_type == "hid":
+                    self._bridge = HIDBridge()
+                    self._bridge_name = "CustomHID"
+                else:
+                    raise RuntimeError("Unknown bridge type")
                 self._ffbL = 0.0; self._ffbR = 0.0; self._ffb_ms = 0
                 self._bridge.set_feedback_callback(self._on_ffb)
                 return
             except Exception as e:
-                LOG.log(f"ViGEm bridge failed: {e}")
-            
+                LOG.log(f"{bridge_type} bridge failed: {e}")
             # Fall back to vJoy if available
             try:
                 if VJoyBridge is None:

@@ -36,24 +36,24 @@
 			<string>WheelerGamepadDriver</string>
 			<key>IOUserServerName</key>
 			<string>com.wheeler.gamepad.driver</string>
+			<key>Manufacturer</key>
+			<string>Wheeler</string>
+			<key>PrimaryUsage</key>
+			<integer>5</integer>
+			<key>PrimaryUsagePage</key>
+			<integer>1</integer>
+			<key>Product</key>
+			<string>Wheeler Virtual Gamepad</string>
+			<key>ProductID</key>
+			<integer>22136</integer>
+			<key>SerialNumber</key>
+			<string>WVG001</string>
 			<key>Transport</key>
 			<string>Virtual</string>
 			<key>VendorID</key>
-			<integer>0x1234</integer>
-			<key>ProductID</key>
-			<integer>0x5678</integer>
+			<integer>4660</integer>
 			<key>VersionNumber</key>
 			<integer>256</integer>
-			<key>Manufacturer</key>
-			<string>Wheeler</string>
-			<key>Product</key>
-			<string>Wheeler Virtual Gamepad</string>
-			<key>SerialNumber</key>
-			<string>WVG001</string>
-			<key>PrimaryUsagePage</key>
-			<integer>1</integer>
-			<key>PrimaryUsage</key>
-			<integer>5</integer>
 		</dict>
 	</dict>
 	<key>OSBundleUsageDescription</key>
