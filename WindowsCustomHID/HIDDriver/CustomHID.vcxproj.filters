@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{6CDE63F0-4837-4A1E-AE33-ABF9417BFF81}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{0CC5A6B4-805D-44C6-A89F-CF80DE4496B1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Driver Package">
+      <UniqueIdentifier>{A4F1B2F5-0D31-4A7D-9A84-4DFE32A680C4}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Driver.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Queue.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Public.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="HidReportDescriptor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Inf Include="CustomHID.inf">
+      <Filter>Driver Package</Filter>
+    </Inf>
+  </ItemGroup>
+</Project>
+
