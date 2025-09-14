@@ -46,6 +46,8 @@
       <Optimization>Disabled</Optimization>
       <AdditionalIncludeDirectories>$(KMDF_INC_PATH);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_WDK_DRIVER_;NTDDI_VERSION=NTDDI_WIN10_RS5;_WIN32_WINNT=0x0A00;NT_PROCESSOR_GROUPS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <SpectreMitigation>Disabled</SpectreMitigation>
+      <SpectreMitigation>Spectre</SpectreMitigation>
     </ClCompile>
     <Link>
       <AdditionalDependencies>WdfDriverEntry.lib;WdfLdr.lib;hidparse.lib;$(DDK_LIB_PATH)\WdfDriverStub.lib;%(AdditionalDependencies)</AdditionalDependencies>
@@ -66,6 +68,8 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <AdditionalIncludeDirectories>$(KMDF_INC_PATH);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_WDK_DRIVER_;NDEBUG;NTDDI_VERSION=NTDDI_WIN10_RS5;_WIN32_WINNT=0x0A00;NT_PROCESSOR_GROUPS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <SpectreMitigation>Disabled</SpectreMitigation>
+      <SpectreMitigation>Spectre</SpectreMitigation>
     </ClCompile>
     <Link>
       <AdditionalDependencies>WdfDriverEntry.lib;WdfLdr.lib;hidparse.lib;$(DDK_LIB_PATH)\WdfDriverStub.lib;%(AdditionalDependencies)</AdditionalDependencies>
@@ -89,4 +93,3 @@
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
 </Project>
-
