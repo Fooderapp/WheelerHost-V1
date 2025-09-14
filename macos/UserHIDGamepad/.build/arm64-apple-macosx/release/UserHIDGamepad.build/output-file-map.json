@@ -1,0 +1,12 @@
+{
+  "": {
+    "dependencies": "/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/macos/UserHIDGamepad/.build/arm64-apple-macosx/release/UserHIDGamepad.build/UserHIDGamepad.d",
+    "object": "/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/macos/UserHIDGamepad/.build/arm64-apple-macosx/release/UserHIDGamepad.build/UserHIDGamepad.o",
+    "swift-dependencies": "/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/macos/UserHIDGamepad/.build/arm64-apple-macosx/release/UserHIDGamepad.build/master.swiftdeps"
+  },
+  "/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/macos/UserHIDGamepad/Sources/main.swift": {
+    "object": "/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/macos/UserHIDGamepad/.build/arm64-apple-macosx/release/UserHIDGamepad.build/main.swift.o",
+    "swiftmodule": "/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/macos/UserHIDGamepad/.build/arm64-apple-macosx/release/UserHIDGamepad.build/main~partial.swiftmodule",
+    "swift-dependencies": "/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/macos/UserHIDGamepad/.build/arm64-apple-macosx/release/UserHIDGamepad.build/main.swiftdeps"
+  }
+}

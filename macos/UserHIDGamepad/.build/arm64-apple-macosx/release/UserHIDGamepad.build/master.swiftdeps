@@ -1,0 +1,6 @@
+version: "Apple Swift version 6.0.3 (swiftlang-6.0.3.1.10 clang-1600.0.30.1)"
+options: "89c65dbcabd4a5c60a2142991c0a30b6e1c9eaf8a562d9567d253302dd21de54"
+build_start_time: [1757853131, 689062000]
+build_end_time: [1757853134, 283807000]
+inputs:
+  "/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/macos/UserHIDGamepad/Sources/main.swift": [1757852989, 138098101]

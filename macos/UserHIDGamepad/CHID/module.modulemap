@@ -1,0 +1,5 @@
+module CHID [system] {
+  header "shim.h"
+  export *
+}
+
