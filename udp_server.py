@@ -8,6 +8,10 @@ from typing import Optional, Tuple, Dict
 from PySide6 import QtCore
 
 from vigem_bridge import ViGEmBridge, XGamepad
+try:
+    from haptics.rumble_expander import RumbleExpander
+except Exception:
+    RumbleExpander = None  # type: ignore
 from hid_bridge import HIDBridge
 try:
     from vjoy_bridge import VJoyBridge  # optional
@@ -81,6 +85,10 @@ class UDPServer(QtCore.QObject):
         self._ffb_ms = 0
         self._bridge.set_feedback_callback(self._on_ffb)
         self._ffb_test_timer: Optional[QtCore.QTimer] = None
+
+        # Haptics: signal expander (maps 2‑ch FFB to richer features)
+        self._hx = RumbleExpander() if RumbleExpander else None
+        self._hx_tprev = None
 
         # low-rate debug to verify we really send packets to the bridge
         self._last_dbg_ms = 0
@@ -410,6 +418,29 @@ class UDPServer(QtCore.QObject):
                     rumbleR = 0.0
                     src = "none"
 
+                # Haptics expander (derive impact/trigger cues for phone)
+                impact = 0.0; trigL_out = 0.0; trigR_out = 0.0
+                if self._hx is not None:
+                    # Compute dt in seconds (fall back to 1/120)
+                    if self._hx_tprev is None:
+                        dt = 1.0/120.0
+                    else:
+                        dt = max(1e-4, min(0.050, (now_ms - self._hx_tprev) / 1000.0))
+                    self._hx_tprev = now_ms
+                    # Use real FFB as input; route with current controls
+                    feat = self._hx.process(
+                        dt, rumbleL, rumbleR,
+                        lt=max(0.0, min(1.0, brake)),
+                        rt=max(0.0, min(1.0, throttle)),
+                        speed01=0.0,
+                        brakePressed=(brake > 0.4),
+                        throttlePressed=(throttle > 0.4),
+                        isOffroad=False,
+                    )
+                    impact = float(feat.get("impact", 0.0))
+                    trigL_out = float(feat.get("trigL", 0.0))
+                    trigR_out = float(feat.get("trigR", 0.0))
+
                 # UI/overlay
                 self.telemetry.emit(x_proc, throttle, brake, latG, seq, rumbleL, rumbleR, src)
                 self.buttons.emit(btns)
@@ -419,6 +450,9 @@ class UDPServer(QtCore.QObject):
                     "ack": seq, "status":"ok",
                     "rumble": max(rumbleL, rumbleR),
                     "rumbleL": rumbleL, "rumbleR": rumbleR,
+                    "impact": impact,
+                    "trigL": trigL_out,
+                    "trigR": trigR_out,
                     "center": max(-1.0, min(1.0, -x_proc)),
                     "centerDeg": 0.0,
                     "resistance": 1.0,
