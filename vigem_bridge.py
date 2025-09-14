@@ -153,6 +153,9 @@ class ViGEmBridge:
         })
 
     def set_feedback_callback(self, cb):
+        """Register feedback callback.
+        Expected signature: cb(left: float, right: float)
+        """
         self._ffb_cb = cb
 
     def _read_stdout(self):
@@ -163,7 +166,32 @@ class ViGEmBridge:
             try:
                 obj = json.loads(line)
                 if obj.get("type") == "ffb" and self._ffb_cb:
-                    self._ffb_cb(obj)
+                    # Normalize rumble payload to (L, R) floats in [0,1]
+                    def _get(name, default=None):
+                        return obj.get(name, default)
+                    L = (
+                        _get("L") or _get("l") or _get("left") or _get("rumbleL") or _get("low") or 0.0
+                    )
+                    R = (
+                        _get("R") or _get("r") or _get("right") or _get("rumbleR") or _get("high") or 0.0
+                    )
+                    try:
+                        Lf = float(L)
+                        Rf = float(R)
+                    except Exception:
+                        # Some bridges may emit 0-65535; scale if ints are large
+                        try:
+                            Li = int(L)
+                            Ri = int(R)
+                            Lf = max(0.0, min(1.0, Li / 65535.0))
+                            Rf = max(0.0, min(1.0, Ri / 65535.0))
+                        except Exception:
+                            Lf, Rf = 0.0, 0.0
+                    try:
+                        self._ffb_cb(Lf, Rf)
+                    except Exception:
+                        # Swallow to keep reader thread alive
+                        pass
             except Exception:
                 pass
 
