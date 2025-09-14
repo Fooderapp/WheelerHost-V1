@@ -12,7 +12,10 @@ try:
     from haptics.rumble_expander import RumbleExpander
 except Exception:
     RumbleExpander = None  # type: ignore
-from hid_bridge import HIDBridge
+try:
+    from hid_bridge import HIDBridge  # optional; only used if WHEELER_BRIDGE=hid
+except Exception:
+    HIDBridge = None  # type: ignore
 try:
     from vjoy_bridge import VJoyBridge  # optional
 except Exception:
