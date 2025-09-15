@@ -224,7 +224,27 @@ class AudioProbe:
         """Switch to a different input device (index from list_devices). None/-1 means Auto."""
         if sd is None:
             return False
-
+        if isinstance(device_index, int) and device_index < 0:
+            device_index = None
+        try:
+            if self._stream is not None:
+                self._stream.stop(); self._stream.close()
+                self._stream = None
+            self._device = device_index
+            # Recreate stream
+            kwargs = { 'dtype':'float32', 'latency':'low', 'samplerate': self._sr, 'channels': 2 }
+            if hasattr(sd, 'WasapiSettings'):
+                ws = sd.WasapiSettings(loopback=True)
+                self._stream = sd.InputStream(callback=self._cb, blocksize=self._bs, extra_settings=ws, device=self._device, **kwargs)
+            else:
+                self._stream = sd.InputStream(callback=self._cb, blocksize=self._bs, samplerate=self._sr, channels=2, dtype='float32', latency='low', device=self._device)
+            self._stream.start()
+            self.enabled = True
+            return True
+        except Exception:
+            self.enabled = False
+            self._stream = None
+            return False
     def auto_pick_loopback(self) -> int | None:
         """Try to open a WASAPI loopback stream by probing output devices.
         Returns selected device index or None if failed.
@@ -252,24 +272,3 @@ class AudioProbe:
         except Exception:
             pass
         return None
-        if isinstance(device_index, int) and device_index < 0:
-            device_index = None
-        try:
-            if self._stream is not None:
-                self._stream.stop(); self._stream.close()
-                self._stream = None
-            self._device = device_index
-            # Recreate stream
-            kwargs = { 'dtype':'float32', 'latency':'low', 'samplerate': self._sr, 'channels': 2 }
-            if hasattr(sd, 'WasapiSettings'):
-                ws = sd.WasapiSettings(loopback=True)
-                self._stream = sd.InputStream(callback=self._cb, blocksize=self._bs, extra_settings=ws, device=self._device, **kwargs)
-            else:
-                self._stream = sd.InputStream(callback=self._cb, blocksize=self._bs, samplerate=self._sr, channels=2, dtype='float32', latency='low', device=self._device)
-            self._stream.start()
-            self.enabled = True
-            return True
-        except Exception:
-            self.enabled = False
-            self._stream = None
-            return False
