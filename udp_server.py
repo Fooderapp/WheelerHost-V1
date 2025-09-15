@@ -16,13 +16,13 @@ from PySide6 import QtCore
 
 from vigem_bridge import ViGEmBridge, XGamepad
 try:
-from haptics.rumble_expander import RumbleExpander
+    from haptics.rumble_expander import RumbleExpander
+except Exception:
+    RumbleExpander = None  # type: ignore
 try:
     from haptics.ffb_synth import FfbSynthEngine
 except Exception:
     FfbSynthEngine = None  # type: ignore
-except Exception:
-    RumbleExpander = None  # type: ignore
 try:
     from hid_bridge import HIDBridge  # optional; only used if WHEELER_BRIDGE=hid
 except Exception:
