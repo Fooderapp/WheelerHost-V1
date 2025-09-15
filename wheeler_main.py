@@ -3,6 +3,13 @@
 # Hotkeys: F9 toggle overlay, F11 reset overlay.
 
 import sys, os, json
+# Make sure this script's directory is importable when launched from another CWD (Windows double-click/run)
+try:
+    _HERE = os.path.dirname(__file__)
+    if _HERE and _HERE not in sys.path:
+        sys.path.insert(0, _HERE)
+except Exception:
+    pass
 from PySide6 import QtWidgets, QtGui, QtCore
 from PySide6.QtCore import Qt
 

@@ -2,7 +2,14 @@
 # Single-client UDP server -> ViGEmBridge (Windows).
 # Real rumble (FFB) flows back from the game via ViGEmBridge and is returned to the phone.
 
-import socket, threading, time, datetime, platform, struct, json
+import socket, threading, time, datetime, platform, struct, json, os, sys
+# Ensure this repo root is on sys.path when launched from another CWD (Windows)
+try:
+    _HERE = os.path.dirname(__file__)
+    if _HERE and _HERE not in sys.path:
+        sys.path.insert(0, _HERE)
+except Exception:
+    pass
 from dataclasses import dataclass
 from typing import Optional, Tuple, Dict
 from PySide6 import QtCore
