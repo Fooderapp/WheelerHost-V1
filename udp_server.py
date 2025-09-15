@@ -88,6 +88,7 @@ class UDPServer(QtCore.QObject):
     buttons   = QtCore.Signal(dict)
     tuning    = QtCore.Signal(dict)
     clients_changed = QtCore.Signal(list)
+    audio_status_changed = QtCore.Signal(str)
 
     def __init__(self, port: int):
         super().__init__()
@@ -124,6 +125,10 @@ class UDPServer(QtCore.QObject):
                     self._audio_helper = AudioHelperProc(hint=str(os.environ.get("WHEELER_AUDIO_DEV","")))
                     if self._audio_helper.start():
                         LOG.log("🔊 Audio helper started (NAudio WASAPI loopback)")
+                        try:
+                            self.audio_status_changed.emit(f"Active — {self._audio_helper.device_name() or 'Default Output'}")
+                        except Exception:
+                            pass
                     else:
                         self._audio_helper = None
             except Exception as e:
@@ -550,9 +555,14 @@ class UDPServer(QtCore.QObject):
                             src = "audio"
                             # Occasional log for audio rumble to aid debugging
                             if now_ms - self._audio_last_log_ms > 800:
-                                devlabel = self._audio_helper.device_name() if helper_ok else str(self._audio_dev)
+                                devlabel = self._audio_helper.device_name() if helper_ok else ("Auto (sounddevice)" if probe_ok else "")
                                 LOG.log(f"🔊 AUDIO rumble L={rumbleL:.2f} R={rumbleR:.2f} gate={'ON' if self._aud_gate_on else 'OFF'} dev={devlabel}")
                                 self._audio_last_log_ms = now_ms
+                                if devlabel:
+                                    try:
+                                        self.audio_status_changed.emit(f"Active — {devlabel}")
+                                    except Exception:
+                                        pass
                         except Exception:
                             rumbleL = 0.0; rumbleR = 0.0; src = "none"
 
@@ -620,6 +630,10 @@ class UDPServer(QtCore.QObject):
                 self._audio_helper.close()
         except Exception:
             pass
+        try:
+            self.audio_status_changed.emit("Inactive")
+        except Exception:
+            pass
         LOG.log("🛑 UDP server stopped")
 
     # ----- audio tuning -----
@@ -673,6 +687,11 @@ class UDPServer(QtCore.QObject):
                 except Exception:
                     pass
                 LOG.log(f"🔊 Audio device switch to {idx}{(' '+str(label)) if label else ''}: {'OK' if ok else 'FAIL'}")
+                if ok:
+                    try:
+                        self.audio_status_changed.emit(f"Active — {label or idx}")
+                    except Exception:
+                        pass
             except Exception as e:
                 LOG.log(f"🔊 Audio device switch error: {e}")
 

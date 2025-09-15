@@ -204,6 +204,8 @@ class MainWindow(QtWidgets.QWidget):
         for idx, label in devs:
             self.cmbAudio.addItem(str(label), idx)
         ga.addWidget(QtWidgets.QLabel("Audio device"), 0, 0); ga.addWidget(self.cmbAudio, 0, 1)
+        self.lblAudioStatus = QtWidgets.QLabel("Audio: Inactive")
+        ga.addWidget(self.lblAudioStatus, 0, 2)
         self.sldRoad = QtWidgets.QSlider(Qt.Horizontal); self.sldRoad.setRange(0, 200); self.sldRoad.setValue(100)
         self.sldEng  = QtWidgets.QSlider(Qt.Horizontal); self.sldEng.setRange(0, 200);  self.sldEng.setValue(100)
         self.sldImp  = QtWidgets.QSlider(Qt.Horizontal); self.sldImp.setRange(0, 200);  self.sldImp.setValue(100)
@@ -262,6 +264,11 @@ class MainWindow(QtWidgets.QWidget):
         self.sldGateOn.valueChanged.connect(lambda v: self.server.set_audio_gate_on(v/100.0))
         self.sldGateOff.valueChanged.connect(lambda v: self.server.set_audio_gate_off(v/100.0))
         self.sldGateHold.valueChanged.connect(lambda v: self.server.set_audio_gate_hold(int(v)))
+        # Reflect audio helper/probe status
+        try:
+            self.server.audio_status_changed.connect(lambda s: self.lblAudioStatus.setText(f"Audio: {s}"))
+        except Exception:
+            pass
 
         # Hotkeys (use QtGui.QShortcut)
         s1 = QtGui.QShortcut(QtGui.QKeySequence("F9"), self)
