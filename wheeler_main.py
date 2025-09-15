@@ -109,20 +109,12 @@ class MainWindow(QtWidgets.QWidget):
         self.lblLan = QtWidgets.QLabel(f"{list_ipv4()[0]}:8765")
         self.btnStart = QtWidgets.QPushButton("STOP")
         self.btnStart.clicked.connect(self.toggleServer)
-        self.chkFfbDebug = QtWidgets.QCheckBox("FFB Debug")
         # New: Edit overlay toggle (mac: keep overlay click‑through by default)
         self.chkEditOverlay = QtWidgets.QCheckBox("Edit overlay (clickable)")
         self.chkEditOverlay.setChecked(False)
         self.chkFreezeSteer = QtWidgets.QCheckBox("Freeze steering (debug)")
-        self.chkFfbPassthrough = QtWidgets.QCheckBox("Disable synth FFB (passthrough only)")
-        self.chkFfbPassthrough.setChecked(True)
-        self.chkHybrid = QtWidgets.QCheckBox("Hybrid synth when real weak")
-        self.chkMaskRealZero = QtWidgets.QCheckBox("Mask real=0 as none")
-        self.chkMaskRealZero.setChecked(True)
-        self.chkFfbDebug.setChecked(False)
-        # New: A/B pad target + bed toggle
+        # New: A/B pad target
         self.cmbPad = QtWidgets.QComboBox(); self.cmbPad.addItems(["X360","DS4"]); self.cmbPad.setCurrentIndex(0)
-        self.chkBed = QtWidgets.QCheckBox("Bed when real=0"); self.chkBed.setChecked(True)
 
         top.addWidget(self.lblLan)
         top.addStretch(1)
@@ -130,12 +122,7 @@ class MainWindow(QtWidgets.QWidget):
         top.addWidget(self.cmbPad)
         top.addSpacing(8)
         top.addWidget(self.chkFreezeSteer)
-        top.addWidget(self.chkFfbPassthrough)
-        top.addWidget(self.chkHybrid)
-        top.addWidget(self.chkMaskRealZero)
-        top.addWidget(self.chkBed)
         top.addWidget(self.chkEditOverlay)
-        top.addWidget(self.chkFfbDebug)
         top.addWidget(self.btnStart)
 
         # Left column: QR + Inputs
@@ -191,24 +178,7 @@ class MainWindow(QtWidgets.QWidget):
 
         rightCol.addWidget(boxOverlay)
 
-        # FFB Debug (dev only)
-        self.grpFfb = QtWidgets.QGroupBox("FFB Debug (dev)")
-        self.grpFfb.setVisible(False)
-        ffbGrid = QtWidgets.QGridLayout(self.grpFfb)
-        ffbGrid.setHorizontalSpacing(12); ffbGrid.setVerticalSpacing(6)
-        self.lblFfbLVal = QtWidgets.QLabel("0%")
-        self.lblFfbLVal.setAlignment(Qt.AlignRight)
-        self.prFfbL = QtWidgets.QProgressBar(); self.prFfbL.setRange(0,1000); self.prFfbL.setTextVisible(False)
-        self.lblFfbRVal = QtWidgets.QLabel("0%")
-        self.lblFfbRVal.setAlignment(Qt.AlignRight)
-        self.prFfbR = QtWidgets.QProgressBar(); self.prFfbR.setRange(0,1000); self.prFfbR.setTextVisible(False)
-        ffbGrid.addWidget(QtWidgets.QLabel("Left (low freq)"), 0, 0); ffbGrid.addWidget(self.lblFfbLVal, 0, 1); ffbGrid.addWidget(self.prFfbL, 1, 0, 1, 2)
-        ffbGrid.addWidget(QtWidgets.QLabel("Right (high freq)"), 2, 0); ffbGrid.addWidget(self.lblFfbRVal, 2, 1); ffbGrid.addWidget(self.prFfbR, 3, 0, 1, 2)
-        self.lblFfbSrc = QtWidgets.QLabel("Source: –")
-        ffbGrid.addWidget(self.lblFfbSrc, 4, 0, 1, 2)
-        self.btnFfbTest = QtWidgets.QPushButton("FFB Test (2s)")
-        ffbGrid.addWidget(self.btnFfbTest, 5, 0, 1, 2)
-        rightCol.addWidget(self.grpFfb)
+        # (FFB debug group removed)
 
         labClients = QtWidgets.QLabel("Client"); rightCol.addWidget(labClients)
         self.lstClients = QtWidgets.QListWidget(); rightCol.addWidget(self.lstClients, 1)
@@ -237,15 +207,10 @@ class MainWindow(QtWidgets.QWidget):
         self.chkEditOverlay.toggled.connect(lambda on: self._for_each_overlay(lambda o: o.set_input_enabled(on)))
 
         # Debug toggle wire-up
-        self.chkFfbDebug.toggled.connect(self.grpFfb.setVisible)
         self.chkFreezeSteer.toggled.connect(self.server.set_freeze_steering)
-        self.chkFfbPassthrough.toggled.connect(self.server.set_ffb_passthrough_only)
         # New: pad target + bed toggles
         self.cmbPad.currentTextChanged.connect(lambda s: self.server.set_pad_target(s.lower()))
-        self.chkBed.toggled.connect(self.server.set_bed_when_real_zero)
-        self.chkHybrid.toggled.connect(self.server.set_hybrid_when_weak)
-        self.chkMaskRealZero.toggled.connect(self.server.set_mask_real_zero)
-        self.btnFfbTest.clicked.connect(self.server.ffb_test)
+        # Removed legacy FFB toggles (bed/hybrid/mask/test) to keep FFB simple
 
         # Hotkeys (use QtGui.QShortcut)
         s1 = QtGui.QShortcut(QtGui.QKeySequence("F9"), self)
@@ -309,20 +274,7 @@ class MainWindow(QtWidgets.QWidget):
         # Feed overlay
         self._for_each_overlay(lambda o: o.set_telemetry(x, latG))
 
-        # Update FFB debug (visible only if toggled)
-        try:
-            l = max(0.0, min(1.0, float(rumbleL)))
-            r = max(0.0, min(1.0, float(rumbleR)))
-            self.prFfbL.setValue(int(l * 1000))
-            self.prFfbR.setValue(int(r * 1000))
-            self.lblFfbLVal.setText(f"{int(l*100):d}%")
-            self.lblFfbRVal.setText(f"{int(r*100):d}%")
-            s = str(src).lower() if isinstance(src, (str, bytes)) else ""
-            if   s == "real":  self.lblFfbSrc.setText("Source: real")
-            elif s == "synth": self.lblFfbSrc.setText("Source: synth")
-            else:               self.lblFfbSrc.setText("Source: none")
-        except Exception:
-            pass
+        # FFB debug UI removed
 
     def onButtons(self, btns: dict):
         pass

@@ -20,9 +20,9 @@ try:
 except Exception:
     RumbleExpander = None  # type: ignore
 try:
-    from haptics.ffb_synth import FfbSynthEngine
+    from haptics.audio_probe import AudioProbe
 except Exception:
-    FfbSynthEngine = None  # type: ignore
+    AudioProbe = None  # type: ignore
 try:
     from hid_bridge import HIDBridge  # optional; only used if WHEELER_BRIDGE=hid
 except Exception:
@@ -103,10 +103,9 @@ class UDPServer(QtCore.QObject):
         # Haptics: signal expander (maps 2‑ch FFB to richer features)
         self._hx = RumbleExpander() if RumbleExpander else None
         self._hx_tprev = None
-        # FFB Synth (when no real FFB and passthrough disabled)
-        self._synth = FfbSynthEngine() if 'FfbSynthEngine' in globals() and FfbSynthEngine else None
-        self._syn_prev_ms = None
-        self._syn_prev_x = 0.0
+        # Audio probe (fallback when no real FFB)
+        self._audio_enabled = str(os.environ.get("WHEELER_AUDIO", "1")).strip().lower() not in ("0","off","false","no")
+        self._audio = AudioProbe() if (AudioProbe and self._audio_enabled) else None
 
         # low-rate debug to verify we really send packets to the bridge
         self._last_dbg_ms = 0
@@ -114,15 +113,13 @@ class UDPServer(QtCore.QObject):
         self._last_ffb_log_ms = 0
         # Debug: freeze steering to neutral (ignore phone steering)
         self._freeze_steer = False
-        # Debug: disable telemetry-based synthesized rumble (default: ON)
-        self._ffb_passthrough_only = True
-        # Debug: when real FFB is fresh but both channels are near zero, inject a light bed
-        # so the phone still feels alive (does NOT use telemetry mapping)
-        self._bed_when_real_zero = True
-        # Debug: hybrid synth disabled by default (we avoid telemetry-driven synth now)
+        # Simplified FFB controls: allow audio fallback by default; no bed/mask tricks
+        self._ffb_passthrough_only = False
+        self._bed_when_real_zero = False
         self._hybrid_when_weak = False
-        # Debug: mask misleading "real but zero" events as none (handled below with bed)
-        self._mask_real_zero = True
+        self._mask_real_zero = False
+        env_syn = str(os.environ.get("WHEELER_SYNTH", "1")).strip().lower()
+        self._synth_enabled = env_syn not in ("0","off","false","no")
 
     def _on_ffb(self, L: float, R: float):
         self._ffbL = float(max(0.0, min(1.0, L)))
@@ -143,13 +140,13 @@ class UDPServer(QtCore.QObject):
     @QtCore.Slot(bool)
     def set_ffb_passthrough_only(self, on: bool):
         self._ffb_passthrough_only = bool(on)
-        LOG.log(f"🎛️ Debug: FFB passthrough-only set to {self._ffb_passthrough_only}")
+        LOG.log(f"🎛️ FFB passthrough-only set to {self._ffb_passthrough_only}")
 
     # Runtime toggles
     @QtCore.Slot(bool)
     def set_bed_when_real_zero(self, on: bool):
-        self._bed_when_real_zero = bool(on)
-        LOG.log(f"🛏️ Bed-on-zero set to {self._bed_when_real_zero}")
+        # legacy no-op
+        self._bed_when_real_zero = False
 
     @QtCore.Slot(str)
     def set_pad_target(self, target: str):
@@ -193,13 +190,11 @@ class UDPServer(QtCore.QObject):
 
     @QtCore.Slot(bool)
     def set_hybrid_when_weak(self, on: bool):
-        self._hybrid_when_weak = bool(on)
-        LOG.log(f"🧪 Debug: Hybrid when weak set to {self._hybrid_when_weak}")
+        self._hybrid_when_weak = False
 
     @QtCore.Slot(bool)
     def set_mask_real_zero(self, on: bool):
-        self._mask_real_zero = bool(on)
-        LOG.log(f"🎚️ Debug: Mask real-zero set to {self._mask_real_zero}")
+        self._mask_real_zero = False
 
     def start(self):
         if self._th and self._th.is_alive(): return
@@ -428,36 +423,23 @@ class UDPServer(QtCore.QObject):
                     rumbleL = float(self._ffbL)
                     rumbleR = float(self._ffbR)
                     src = "real"
-                    # If both channels are effectively zero, optionally inject a light "bed"
-                    if (rumbleL < 0.005 and rumbleR < 0.005):
-                        if self._bed_when_real_zero:
-                            # Subtle constant bed; not telemetry-based
-                            rumbleL = 0.10
-                            rumbleR = 0.12
-                            src = "bed"
-                        elif self._mask_real_zero:
-                            src = "none"
-                            rumbleL = 0.0
-                            rumbleR = 0.0
-                    # No hybrid blending; we avoid telemetry-driven synth by default
+                    # No bed/mask/hybrid modifications — pass as-is
                 else:
                     # No fresh real FFB
-                    if self._ffb_passthrough_only or self._synth is None:
+                    if self._ffb_passthrough_only or not self._audio:
                         rumbleL = 0.0
                         rumbleR = 0.0
                         src = "none"
                     else:
-                        # Synthesize from current steering and rate of change
-                        if self._syn_prev_ms is None:
-                            dt = 1.0/120.0
-                        else:
-                            dt = max(1e-4, min(0.05, (now_ms - self._syn_prev_ms)/1000.0))
-                        dx = 0.0 if self._syn_prev_ms is None else (use_lx - self._syn_prev_x) / max(1e-4, dt)
-                        self._syn_prev_ms = now_ms
-                        self._syn_prev_x = use_lx
                         try:
-                            rumbleL, rumbleR = self._synth.process(dt, use_lx, dx, throttle, brake, latG)
-                            src = "synth"
+                            feat = self._audio.get()
+                            # Map audio features to rumble: use bodyL/bodyR and a dash of impact
+                            bodyL = float(max(0.0, min(1.0, feat.get("bodyL", 0.0))))
+                            bodyR = float(max(0.0, min(1.0, feat.get("bodyR", 0.0))))
+                            imp   = float(max(0.0, min(1.0, feat.get("impact", 0.0))))
+                            rumbleL = max(bodyL, 0.35 * imp)
+                            rumbleR = max(bodyR, 0.45 * imp)
+                            src = "audio"
                         except Exception:
                             rumbleL = 0.0; rumbleR = 0.0; src = "none"
 
