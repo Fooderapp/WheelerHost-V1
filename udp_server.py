@@ -554,6 +554,12 @@ class UDPServer(QtCore.QObject):
                             rR0 = max(bodyR, 0.45 * imp)
                             energy = max(rL0, rR0)
                             eng_val = float(max(0.0, min(1.0, feat.get("engine", energy))))
+                            # Estimate road dominance (if no explicit 'road' field)
+                            road_est = float(max(0.0, min(1.0, feat.get("road", max(bodyL, bodyR) - 0.5*eng_val))))
+                            if eng_val > road_est + 0.12:
+                                # Engine dominant → soften base amplitude to keep engine as subtle background
+                                k = max(0.25, 0.35 + 0.40 * road_est)  # 0.35..0.75
+                                rL0 *= k; rR0 *= k
                             # Gate/hysteresis
                             if not self._aud_gate_on:
                                 if energy >= self._aud_on_thresh or imp >= 0.12:
@@ -582,7 +588,15 @@ class UDPServer(QtCore.QObject):
                                     # advance schedule to current time window
                                     while now_ms - self._aud_pulse_next_ms > period_ms:
                                         self._aud_pulse_next_ms += period_ms
-                                    if (now_ms - self._aud_pulse_next_ms) <= self._aud_pulse_w_ms:
+                                    # add small deterministic jitter to avoid machine-gun feel
+                                    jitter = int(0.10 * period_ms)
+                                    if jitter > 0:
+                                        jseed = (now_ms // 33) % 7  # 0..6
+                                        joff = (int(jseed) - 3) * (jitter // 3)
+                                        win_start = self._aud_pulse_next_ms + joff
+                                    else:
+                                        win_start = self._aud_pulse_next_ms
+                                    if (now_ms - win_start) <= self._aud_pulse_w_ms:
                                         rumbleL, rumbleR = rL0, rR0
                                     else:
                                         rumbleL, rumbleR = 0.0, 0.0
