@@ -133,6 +133,21 @@ class UDPServer(QtCore.QObject):
                         self._audio_helper = None
             except Exception as e:
                 LOG.log(f"🔊 Audio helper start failed: {e}")
+        # macOS helper (Swift) if present
+        if platform.system().lower() == 'darwin' and str(os.environ.get("WHEELER_AUDIO_HELPER","1")).strip().lower() not in ("0","off","false","no") and self._audio_helper is None:
+            try:
+                if AudioHelperProc is not None:
+                    self._audio_helper = AudioHelperProc(hint=str(os.environ.get("WHEELER_AUDIO_DEV","")))
+                    if self._audio_helper.start():
+                        LOG.log("🔊 Audio helper started (macOS)")
+                        try:
+                            self.audio_status_changed.emit(f"Active — {self._audio_helper.device_name() or 'Default Input'}")
+                        except Exception:
+                            pass
+                    else:
+                        self._audio_helper = None
+            except Exception as e:
+                LOG.log(f"🔊 Audio helper start failed (macOS): {e}")
         # Audio gating to avoid constant bed
         self._aud_gate_on = False
         self._aud_gate_ton_ms = 0

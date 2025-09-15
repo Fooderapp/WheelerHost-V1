@@ -11,8 +11,6 @@ class AudioHelperProc:
         self._hint = hint
 
     def start(self) -> bool:
-        if platform.system().lower() != 'windows':
-            return False
         exe = self._find_helper()
         if not exe:
             return False
@@ -30,18 +28,29 @@ class AudioHelperProc:
         return True
 
     def _find_helper(self) -> Optional[str]:
-        # Try common relative paths
+        # Try common relative paths for Windows (exe) and macOS (Swift SPM build)
         roots = [os.path.dirname(os.path.dirname(__file__)), os.getcwd()]
-        candidates = [
-            os.path.join('WindowsAudioHelper','bin','Release','net8.0','win-x64','publish','AudioHelper.exe'),
-            os.path.join('WindowsAudioHelper','bin','Debug','net8.0','win-x64','publish','AudioHelper.exe'),
-            os.path.join('WindowsAudioHelper','AudioHelper.exe'),
-            'AudioHelper.exe',
-        ]
+        if platform.system().lower() == 'windows':
+            candidates = [
+                os.path.join('WindowsAudioHelper','bin','Release','net8.0','win-x64','publish','AudioHelper.exe'),
+                os.path.join('WindowsAudioHelper','bin','Debug','net8.0','win-x64','publish','AudioHelper.exe'),
+                os.path.join('WindowsAudioHelper','AudioHelper.exe'),
+                'AudioHelper.exe',
+            ]
+        else:
+            candidates = [
+                os.path.join('MacAudioHelper','.build','release','MacAudioHelper'),
+                os.path.join('MacAudioHelper','.build','debug','MacAudioHelper'),
+            ]
         for root in roots:
             for rel in candidates:
                 path = os.path.join(root, rel)
                 if os.path.isfile(path):
+                    if platform.system().lower() != 'windows':
+                        try:
+                            os.chmod(path, 0o755)
+                        except Exception:
+                            pass
                     return path
         return None
 
@@ -81,4 +90,3 @@ class AudioHelperProc:
                 self._proc.terminate()
         except Exception:
             pass
-
