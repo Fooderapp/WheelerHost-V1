@@ -15,6 +15,10 @@ from PySide6.QtCore import Qt
 
 from udp_server import UDPServer, LOG
 from overlay import Overlay
+try:
+    from haptics.audio_probe import list_devices as list_audio_devices
+except Exception:
+    list_audio_devices = None
 
 # --------- QR Pane (shows QR for udp://IP:PORT but caption is IP:PORT only) ----------
 import io, socket, qrcode
@@ -115,11 +119,15 @@ class MainWindow(QtWidgets.QWidget):
         self.chkFreezeSteer = QtWidgets.QCheckBox("Freeze steering (debug)")
         # New: A/B pad target
         self.cmbPad = QtWidgets.QComboBox(); self.cmbPad.addItems(["X360","DS4"]); self.cmbPad.setCurrentIndex(0)
+        # FFB source label
+        self.lblFfbSrc = QtWidgets.QLabel("FFB: –")
 
         top.addWidget(self.lblLan)
         top.addStretch(1)
         top.addWidget(QtWidgets.QLabel("Pad:"))
         top.addWidget(self.cmbPad)
+        top.addSpacing(8)
+        top.addWidget(self.lblFfbSrc)
         top.addSpacing(8)
         top.addWidget(self.chkFreezeSteer)
         top.addWidget(self.chkEditOverlay)
@@ -182,14 +190,28 @@ class MainWindow(QtWidgets.QWidget):
         boxAudio = QtWidgets.QGroupBox("Audio Haptics")
         ga = QtWidgets.QGridLayout(boxAudio)
         ga.setHorizontalSpacing(12); ga.setVerticalSpacing(6)
+        # Device selector
+        self.cmbAudio = QtWidgets.QComboBox()
+        self.cmbAudio.setMinimumWidth(260)
+        devs = []
+        if list_audio_devices is not None:
+            try:
+                devs = list_audio_devices()
+            except Exception:
+                devs = []
+        if not devs:
+            devs = [(-1, 'Auto')]
+        for idx, label in devs:
+            self.cmbAudio.addItem(str(label), idx)
+        ga.addWidget(QtWidgets.QLabel("Audio device"), 0, 0); ga.addWidget(self.cmbAudio, 0, 1)
         self.sldRoad = QtWidgets.QSlider(Qt.Horizontal); self.sldRoad.setRange(0, 200); self.sldRoad.setValue(100)
         self.sldEng  = QtWidgets.QSlider(Qt.Horizontal); self.sldEng.setRange(0, 200);  self.sldEng.setValue(100)
         self.sldImp  = QtWidgets.QSlider(Qt.Horizontal); self.sldImp.setRange(0, 200);  self.sldImp.setValue(100)
         self.sldMusic = QtWidgets.QSlider(Qt.Horizontal); self.sldMusic.setRange(0, 100); self.sldMusic.setValue(60)
-        ga.addWidget(QtWidgets.QLabel("Road gain"),   0, 0); ga.addWidget(self.sldRoad, 0, 1)
-        ga.addWidget(QtWidgets.QLabel("Engine gain"), 1, 0); ga.addWidget(self.sldEng,  1, 1)
-        ga.addWidget(QtWidgets.QLabel("Impact gain"), 2, 0); ga.addWidget(self.sldImp,  2, 1)
-        ga.addWidget(QtWidgets.QLabel("Music suppression"), 3, 0); ga.addWidget(self.sldMusic, 3, 1)
+        ga.addWidget(QtWidgets.QLabel("Road gain"),   1, 0); ga.addWidget(self.sldRoad, 1, 1)
+        ga.addWidget(QtWidgets.QLabel("Engine gain"), 2, 0); ga.addWidget(self.sldEng,  2, 1)
+        ga.addWidget(QtWidgets.QLabel("Impact gain"), 3, 0); ga.addWidget(self.sldImp,  3, 1)
+        ga.addWidget(QtWidgets.QLabel("Music suppression"), 4, 0); ga.addWidget(self.sldMusic, 4, 1)
         rightCol.addWidget(boxAudio)
 
         labClients = QtWidgets.QLabel("Client"); rightCol.addWidget(labClients)
@@ -225,6 +247,7 @@ class MainWindow(QtWidgets.QWidget):
         # Removed legacy FFB toggles (bed/hybrid/mask/test) to keep FFB simple
 
         # Audio sliders → server
+        self.cmbAudio.currentIndexChanged.connect(lambda _: self.server.set_audio_device(self.cmbAudio.currentData()))
         self.sldRoad.valueChanged.connect(lambda v: self.server.set_audio_road_gain(v/100.0))
         self.sldEng.valueChanged.connect(lambda v: self.server.set_audio_engine_gain(v/100.0))
         self.sldImp.valueChanged.connect(lambda v: self.server.set_audio_impact_gain(v/100.0))
@@ -292,7 +315,15 @@ class MainWindow(QtWidgets.QWidget):
         # Feed overlay
         self._for_each_overlay(lambda o: o.set_telemetry(x, latG))
 
-        # FFB debug UI removed
+        # FFB source label
+        try:
+            s = str(src).lower() if isinstance(src, (str, bytes)) else ""
+            if   s == "real":  self.lblFfbSrc.setText("FFB: REAL")
+            elif s == "audio": self.lblFfbSrc.setText("FFB: AUDIO")
+            elif s == "synth": self.lblFfbSrc.setText("FFB: SYNTH")
+            else:               self.lblFfbSrc.setText("FFB: NONE")
+        except Exception:
+            pass
 
     def onButtons(self, btns: dict):
         pass

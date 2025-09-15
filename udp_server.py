@@ -109,7 +109,8 @@ class UDPServer(QtCore.QObject):
         self._hx_tprev = None
         # Audio probe (fallback when no real FFB)
         self._audio_enabled = str(os.environ.get("WHEELER_AUDIO", "1")).strip().lower() not in ("0","off","false","no")
-        self._audio = AudioProbe() if (AudioProbe and self._audio_enabled) else None
+        self._audio_dev = -1  # -1 = Auto
+        self._audio = AudioProbe(device=None) if (AudioProbe and self._audio_enabled) else None
         # Memory scan (optional, Windows only). Profile via env JSON-like or defaults empty
         self._mem_enabled = str(os.environ.get("WHEELER_MEMSCAN", "0")).strip().lower() in ("1","on","true","yes")
         self._mem = None
@@ -555,6 +556,21 @@ class UDPServer(QtCore.QObject):
             try: self._audio.set_params(music_suppress=v)
             except Exception: pass
             LOG.log(f"🎛️ Music suppression = {v:.2f}")
+
+    @QtCore.Slot(int)
+    def set_audio_device(self, idx: int):
+        self._audio_dev = int(idx)
+        if self._audio is None and AudioProbe and self._audio_enabled:
+            try:
+                self._audio = AudioProbe(device=(None if idx < 0 else idx))
+            except Exception:
+                self._audio = None
+        elif self._audio is not None:
+            try:
+                ok = self._audio.switch_device(idx)
+                LOG.log(f"🔊 Audio device switch to {idx}: {'OK' if ok else 'FAIL'}")
+            except Exception as e:
+                LOG.log(f"🔊 Audio device switch error: {e}")
 
     def _init_bridge(self):
         """Select and initialize input bridge with comprehensive platform support."""

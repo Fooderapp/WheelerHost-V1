@@ -25,11 +25,36 @@ except Exception:
     sd = None  # type: ignore
 
 
+def list_devices():
+    """Return a list of (index, label) devices suitable for input/loopback.
+    On Windows WASAPI, prefer devices containing 'loopback'. Includes an 'Auto' option (-1).
+    """
+    out = [(-1, 'Auto')]
+    if sd is None:
+        return out
+    try:
+        devs = sd.query_devices()
+        hostapis = sd.query_hostapis()
+        for i, d in enumerate(devs):
+            max_in = d.get('max_input_channels', 0)
+            host = hostapis[d.get('hostapi', 0)].get('name', '')
+            name = d.get('name', '')
+            label = f"{i}: {name} [{host}]"
+            if max_in and max_in > 0:
+                out.append((i, label))
+            elif 'wasapi' in host.lower() and 'loopback' in name.lower():
+                out.append((i, label))
+    except Exception:
+        pass
+    return out
+
+
 class AudioProbe:
-    def __init__(self, samplerate: int = 48000, blocksize: int = 1024):
+    def __init__(self, samplerate: int = 48000, blocksize: int = 1024, device: int | None = None):
         self.enabled = (np is not None and sd is not None)
         self._sr = int(samplerate)
         self._bs = int(blocksize)
+        self._device = device if (isinstance(device, int) and device >= 0) else None
         self._lock = threading.Lock()
         self._features: Dict[str, float] = {"bodyL":0.0, "bodyR":0.0, "impact":0.0}
         # Tunables (thread-safe via _lock). Defaults aimed for general content.
@@ -63,16 +88,17 @@ class AudioProbe:
             if hasattr(sd, 'WasapiSettings'):
                 try:
                     # Pick an explicit loopback device if available
-                    dev_index = None
-                    try:
-                        devs = sd.query_devices()
-                        for i, d in enumerate(devs):
-                            name = str(d.get('name','')).lower()
-                            host = sd.query_hostapis()[d.get('hostapi',0)].get('name','').lower()
-                            if 'wasapi' in host and 'loopback' in name and d.get('max_input_channels',0) >= 1:
-                                dev_index = i; break
-                    except Exception:
-                        dev_index = None
+                    dev_index = self._device
+                    if dev_index is None:
+                        try:
+                            devs = sd.query_devices()
+                            for i, d in enumerate(devs):
+                                name = str(d.get('name','')).lower()
+                                host = sd.query_hostapis()[d.get('hostapi',0)].get('name','').lower()
+                                if 'wasapi' in host and 'loopback' in name and d.get('max_input_channels',0) >= 1:
+                                    dev_index = i; break
+                        except Exception:
+                            dev_index = None
                     ws = sd.WasapiSettings(loopback=True)
                     self._stream = sd.InputStream(callback=self._cb, blocksize=self._bs, extra_settings=ws, device=dev_index, **kwargs)
                 except Exception:
@@ -188,3 +214,29 @@ class AudioProbe:
                         self._params[k] = float(v)
                     except Exception:
                         pass
+
+    def switch_device(self, device_index: int | None):
+        """Switch to a different input device (index from list_devices). None/-1 means Auto."""
+        if sd is None:
+            return False
+        if isinstance(device_index, int) and device_index < 0:
+            device_index = None
+        try:
+            if self._stream is not None:
+                self._stream.stop(); self._stream.close()
+                self._stream = None
+            self._device = device_index
+            # Recreate stream
+            kwargs = { 'dtype':'float32', 'latency':'low', 'samplerate': self._sr, 'channels': 2 }
+            if hasattr(sd, 'WasapiSettings'):
+                ws = sd.WasapiSettings(loopback=True)
+                self._stream = sd.InputStream(callback=self._cb, blocksize=self._bs, extra_settings=ws, device=self._device, **kwargs)
+            else:
+                self._stream = sd.InputStream(callback=self._cb, blocksize=self._bs, samplerate=self._sr, channels=2, dtype='float32', latency='low', device=self._device)
+            self._stream.start()
+            self.enabled = True
+            return True
+        except Exception:
+            self.enabled = False
+            self._stream = None
+            return False
