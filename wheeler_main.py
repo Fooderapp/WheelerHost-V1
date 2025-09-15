@@ -87,7 +87,15 @@ class MainWindow(QtWidgets.QWidget):
         self.server.tuning.connect(self.onRemoteTuning)
         self.server.clients_changed.connect(self.onClientsChanged)
 
-        self.overlay = Overlay()
+        # Create one overlay per screen so the bar appears on every display
+        self.overlays = []
+        app = QtWidgets.QApplication.instance()
+        try:
+            for s in app.screens():
+                self.overlays.append(Overlay(screen=s))
+        except Exception:
+            # Fallback: at least one overlay on primary
+            self.overlays.append(Overlay())
 
         # Top bar
         top = QtWidgets.QHBoxLayout()
@@ -219,7 +227,7 @@ class MainWindow(QtWidgets.QWidget):
         self.spinAlpha.valueChanged.connect(self.overlay.set_alpha_strength)
         self.btnResetOverlay.clicked.connect(self.overlay.reset_all)
         # Edit overlay click‑through control
-        self.chkEditOverlay.toggled.connect(self.overlay.set_input_enabled)
+        self.chkEditOverlay.toggled.connect(lambda on: self._for_each_overlay(lambda o: o.set_input_enabled(on)))
 
         # Debug toggle wire-up
         self.chkFfbDebug.toggled.connect(self.grpFfb.setVisible)
@@ -275,11 +283,13 @@ class MainWindow(QtWidgets.QWidget):
 
     # ----- hotkeys -----
     def _toggleOverlayVisible(self):
-        self.overlay.set_overlay_visible(not self.overlay.isVisible())
+        any_vis = any(o.isVisible() for o in self.overlays)
+        new_vis = not any_vis
+        self._for_each_overlay(lambda o: o.set_overlay_visible(new_vis))
         self._sync_overlay_drag()
 
     def _resetOverlay(self):
-        self.overlay.reset_all()
+        self._for_each_overlay(lambda o: o.reset_all())
 
     # ----- slots from server -----
     def onTelemetry(self, x, throttle, brake, latG, seq_any, rumbleL, rumbleR, src):
@@ -291,7 +301,7 @@ class MainWindow(QtWidgets.QWidget):
         self.lblThrVal.setText(f"{int(throttle*100):d}%")
         self.lblBrkVal.setText(f"{int(brake*100):d}%")
         # Feed overlay
-        self.overlay.set_telemetry(x, latG)
+        self._for_each_overlay(lambda o: o.set_telemetry(x, latG))
 
         # Update FFB debug (visible only if toggled)
         try:
@@ -317,6 +327,17 @@ class MainWindow(QtWidgets.QWidget):
     def onClientsChanged(self, items):
         self.lstClients.clear()
         self.lstClients.addItems(items)
+
+    # ----- helper -----
+    def _for_each_overlay(self, fn):
+        try:
+            for o in getattr(self, 'overlays', []):
+                try:
+                    fn(o)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
 # ---------- main ----------
 def main():

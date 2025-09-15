@@ -320,7 +320,17 @@ class UDPServer(QtCore.QObject):
                     continue
                 if t in ("inbackground", "disconnect", "destroy"):
                     if self._client and addr == self._client.addr:
-                        self._disconnect(t.title())
+                        if t in ("disconnect", "destroy"):
+                            # Fully remove client entry on explicit disconnect/destroy
+                            try:
+                                self._bridge.send_state(0.0, 0.0, 0, 0, 0)
+                            except Exception:
+                                pass
+                            self._client = None
+                            self._emit_clients()
+                            LOG.log(f"⏹️ {t.title()}: client removed")
+                        else:
+                            self._disconnect(t.title())
                     continue
 
                 # Lock to first client
@@ -542,7 +552,8 @@ class UDPServer(QtCore.QObject):
         try:
             if MacOSGamepadBridge is None:
                 raise RuntimeError("Cross-platform bridge not available")
-            self._bridge = MacOSGamepadBridge(device_id=1)
+            # Our macOS cross-platform bridge does not take a device_id
+            self._bridge = MacOSGamepadBridge()
             self._bridge_name = f"CrossPlatform-{system.title()}"
             self._ffbL = 0.0; self._ffbR = 0.0; self._ffb_ms = 0
             self._bridge.set_feedback_callback(self._on_ffb)

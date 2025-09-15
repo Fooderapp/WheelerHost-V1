@@ -12,9 +12,18 @@ LIME = QtGui.QColor("#D4FF00")
 class Overlay(QtWidgets.QWidget):
     layoutChanged = QtCore.Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, screen: QtGui.QScreen | None = None):
         super().__init__(parent)
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool | Qt.NoDropShadowWindowHint)
+        self._screen = screen or QtWidgets.QApplication.primaryScreen()
+        # Use different flags on macOS to improve stacking across Spaces/fullscreen
+        if platform.system() == "Darwin":
+            self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.NoDropShadowWindowHint | Qt.Window)
+            try:
+                self.setWindowFlag(Qt.WindowDoesNotAcceptFocus, True)
+            except Exception:
+                pass
+        else:
+            self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool | Qt.NoDropShadowWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
 
         # toggles + scale
@@ -62,15 +71,118 @@ class Overlay(QtWidgets.QWidget):
         self._ind_pix = self._load_pix(["INDICATOR.png","INDICATOR.jpeg","indicator.png","indicator.jpeg"]) if not self._ind_svg else None
 
         self._apply_click_through()
+        self._apply_macos_all_spaces()  # best-effort: keep overlay on all Spaces/fullscreen
+        self._apply_macos_window_level() # best-effort: keep overlay above normal windows
         self._apply_screen_geometry()
 
         # repaint tick
         self._timer = QtCore.QTimer(self); self._timer.timeout.connect(self.update); self._timer.start(33)
-        app = QtWidgets.QApplication.instance()
-        for s in app.screens():
-            s.geometryChanged.connect(self._apply_screen_geometry)
+        # Track geometry only for this overlay's screen
+        if self._screen is not None:
+            try:
+                self._screen.geometryChanged.connect(self._apply_screen_geometry)
+            except Exception:
+                pass
+
+        # Maintain topmost + all-spaces periodically (handles Space switches/fullscreen changes)
+        if platform.system() == "Darwin":
+            self._ontop_timer = QtCore.QTimer(self)
+            self._ontop_timer.setInterval(1500)
+            self._ontop_timer.timeout.connect(self._maintain_top)
+            self._ontop_timer.start()
 
         self.show()
+
+    # ---------- macOS: keep on all spaces / fullscreen ----------
+    def _apply_macos_all_spaces(self):
+        try:
+            if platform.system() != "Darwin":
+                return
+            # Use Objective‑C runtime via ctypes to set NSWindow.collectionBehavior
+            from ctypes import util, cdll, c_void_p, c_ulong, c_char_p
+            libobjc_path = util.find_library('objc')
+            if not libobjc_path:
+                return
+            objc = cdll.LoadLibrary(libobjc_path)
+
+            # Selectors
+            sel_getUid = objc.sel_registerName; sel_getUid.argtypes = [c_char_p]; sel_getUid.restype = c_void_p
+            msgSend = objc.objc_msgSend
+
+            # Get NSWindow* from NSView* (winId is NSView*)
+            view = c_void_p(int(self.winId()))
+            sel_window = sel_getUid(b"window")
+            msgSend.restype = c_void_p
+            msgSend.argtypes = [c_void_p, c_void_p]
+            nswindow = msgSend(view, sel_window)
+            if not nswindow:
+                return
+
+            # Flags (bit values per AppKit)
+            NSWindowCollectionBehaviorCanJoinAllSpaces   = c_ulong(1 << 0)
+            NSWindowCollectionBehaviorMoveToActiveSpace  = c_ulong(1 << 1)
+            NSWindowCollectionBehaviorTransient          = c_ulong(1 << 3)
+            NSWindowCollectionBehaviorStationary         = c_ulong(1 << 4)
+            NSWindowCollectionBehaviorFullScreenAuxiliary= c_ulong(1 << 8)
+            
+            # Desired: join all spaces + stationary + fullscreen auxiliary (no move-to-active, no transient)
+            desired = (NSWindowCollectionBehaviorCanJoinAllSpaces.value |
+                       NSWindowCollectionBehaviorStationary.value |
+                       NSWindowCollectionBehaviorFullScreenAuxiliary.value)
+
+            # Apply directly (do not OR with current to avoid inheriting MoveToActiveSpace)
+            sel_set = sel_getUid(b"setCollectionBehavior:")
+            msgSend.restype = None
+            msgSend.argtypes = [c_void_p, c_void_p, c_ulong]
+            msgSend(nswindow, sel_set, c_ulong(desired))
+        except Exception:
+            # Best‑effort; ignore if PyObjC/Cocoa not available
+            pass
+
+    # ---------- macOS: raise overlay level ----------
+    def _apply_macos_window_level(self):
+        try:
+            if platform.system() != "Darwin":
+                return
+            from ctypes import util, cdll, c_void_p, c_int, c_char_p
+            libobjc_path = util.find_library('objc')
+            if not libobjc_path:
+                return
+            objc = cdll.LoadLibrary(libobjc_path)
+            sel_getUid = objc.sel_registerName; sel_getUid.argtypes = [c_char_p]; sel_getUid.restype = c_void_p
+            msgSend = objc.objc_msgSend
+
+            view = c_void_p(int(self.winId()))
+            sel_window = sel_getUid(b"window")
+            msgSend.restype = c_void_p
+            msgSend.argtypes = [c_void_p, c_void_p]
+            nswindow = msgSend(view, sel_window)
+            if not nswindow:
+                return
+
+            # Raise higher so it overlays more apps and fullscreens during testing
+            # Use a very high level (~2000) similar to CGShieldingWindowLevel
+            HighOverlayLevel = 2000
+            sel_setLevel = sel_getUid(b"setLevel:")
+            msgSend.restype = None
+            msgSend.argtypes = [c_void_p, c_void_p, c_int]
+            msgSend(nswindow, sel_setLevel, c_int(HighOverlayLevel))
+
+            # Bring to front regardless
+            sel_orderFrontRegardless = sel_getUid(b"orderFrontRegardless")
+            msgSend.restype = None
+            msgSend.argtypes = [c_void_p, c_void_p]
+            msgSend(nswindow, sel_orderFrontRegardless)
+        except Exception:
+            pass
+
+    def _maintain_top(self):
+        # Reapply flags and bring to front; helps when user switches Spaces/fullscreen
+        try:
+            self._apply_macos_all_spaces()
+            self._apply_macos_window_level()
+        except Exception:
+            pass
 
     # ---------- assets ----------
     def _load_svg(self, name):
@@ -236,8 +348,9 @@ class Overlay(QtWidgets.QWidget):
         self._ind_h  = self._ind_h_base  * s
 
     def _apply_screen_geometry(self, reuse_positions=False):
-        scr = QtWidgets.QApplication.primaryScreen()
-        if not scr: return
+        scr = self._screen or QtWidgets.QApplication.primaryScreen()
+        if not scr:
+            return
         g = scr.geometry()
         self.setGeometry(g)
         if not reuse_positions:
