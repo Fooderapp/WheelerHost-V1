@@ -499,6 +499,37 @@ class UDPServer(QtCore.QObject):
         except Exception: pass
         LOG.log("🛑 UDP server stopped")
 
+    # ----- audio tuning -----
+    @QtCore.Slot(float)
+    def set_audio_road_gain(self, v: float):
+        if self._audio:
+            try: self._audio.set_params(road_gain=float(v))
+            except Exception: pass
+            LOG.log(f"🎚️ Audio road gain = {v:.2f}")
+
+    @QtCore.Slot(float)
+    def set_audio_engine_gain(self, v: float):
+        if self._audio:
+            try: self._audio.set_params(engine_gain=float(v))
+            except Exception: pass
+            LOG.log(f"🎚️ Audio engine gain = {v:.2f}")
+
+    @QtCore.Slot(float)
+    def set_audio_impact_gain(self, v: float):
+        if self._audio:
+            try: self._audio.set_params(impact_gain=float(v))
+            except Exception: pass
+            LOG.log(f"🎚️ Audio impact gain = {v:.2f}")
+
+    @QtCore.Slot(float)
+    def set_audio_music_suppress(self, v: float):
+        # 0..1
+        v = max(0.0, min(1.0, float(v)))
+        if self._audio:
+            try: self._audio.set_params(music_suppress=v)
+            except Exception: pass
+            LOG.log(f"🎛️ Music suppression = {v:.2f}")
+
     def _init_bridge(self):
         """Select and initialize input bridge with comprehensive platform support."""
         import os

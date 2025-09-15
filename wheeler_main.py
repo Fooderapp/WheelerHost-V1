@@ -178,7 +178,19 @@ class MainWindow(QtWidgets.QWidget):
 
         rightCol.addWidget(boxOverlay)
 
-        # (FFB debug group removed)
+        # Audio Haptics controls
+        boxAudio = QtWidgets.QGroupBox("Audio Haptics")
+        ga = QtWidgets.QGridLayout(boxAudio)
+        ga.setHorizontalSpacing(12); ga.setVerticalSpacing(6)
+        self.sldRoad = QtWidgets.QSlider(Qt.Horizontal); self.sldRoad.setRange(0, 200); self.sldRoad.setValue(100)
+        self.sldEng  = QtWidgets.QSlider(Qt.Horizontal); self.sldEng.setRange(0, 200);  self.sldEng.setValue(100)
+        self.sldImp  = QtWidgets.QSlider(Qt.Horizontal); self.sldImp.setRange(0, 200);  self.sldImp.setValue(100)
+        self.sldMusic = QtWidgets.QSlider(Qt.Horizontal); self.sldMusic.setRange(0, 100); self.sldMusic.setValue(60)
+        ga.addWidget(QtWidgets.QLabel("Road gain"),   0, 0); ga.addWidget(self.sldRoad, 0, 1)
+        ga.addWidget(QtWidgets.QLabel("Engine gain"), 1, 0); ga.addWidget(self.sldEng,  1, 1)
+        ga.addWidget(QtWidgets.QLabel("Impact gain"), 2, 0); ga.addWidget(self.sldImp,  2, 1)
+        ga.addWidget(QtWidgets.QLabel("Music suppression"), 3, 0); ga.addWidget(self.sldMusic, 3, 1)
+        rightCol.addWidget(boxAudio)
 
         labClients = QtWidgets.QLabel("Client"); rightCol.addWidget(labClients)
         self.lstClients = QtWidgets.QListWidget(); rightCol.addWidget(self.lstClients, 1)
@@ -211,6 +223,12 @@ class MainWindow(QtWidgets.QWidget):
         # New: pad target + bed toggles
         self.cmbPad.currentTextChanged.connect(lambda s: self.server.set_pad_target(s.lower()))
         # Removed legacy FFB toggles (bed/hybrid/mask/test) to keep FFB simple
+
+        # Audio sliders → server
+        self.sldRoad.valueChanged.connect(lambda v: self.server.set_audio_road_gain(v/100.0))
+        self.sldEng.valueChanged.connect(lambda v: self.server.set_audio_engine_gain(v/100.0))
+        self.sldImp.valueChanged.connect(lambda v: self.server.set_audio_impact_gain(v/100.0))
+        self.sldMusic.valueChanged.connect(lambda v: self.server.set_audio_music_suppress(v/100.0))
 
         # Hotkeys (use QtGui.QShortcut)
         s1 = QtGui.QShortcut(QtGui.QKeySequence("F9"), self)

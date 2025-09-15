@@ -32,6 +32,21 @@ class AudioProbe:
         self._bs = int(blocksize)
         self._lock = threading.Lock()
         self._features: Dict[str, float] = {"bodyL":0.0, "bodyR":0.0, "impact":0.0}
+        # Tunables (thread-safe via _lock). Defaults aimed for general content.
+        self._params = {
+            "road_gain": 1.0,
+            "engine_gain": 1.0,
+            "impact_gain": 1.0,
+            # Normalization scales (approximate). Higher -> less sensitive
+            "road_norm": 0.020,
+            "eng_norm":  0.015,
+            "imp_norm":  0.010,
+            # Music suppression: 0=off, 1=strong
+            "music_suppress": 0.6,
+            # Suppress when flatness < thresh and flux < gate
+            "flat_thresh": 0.25,
+            "flux_gate":   0.002,
+        }
         self._prev_mag = None
         self._flux_env = 0.0
         self._road_env = 0.0
@@ -128,19 +143,23 @@ class AudioProbe:
             self._eng_env  = smooth(self._eng_env,  eng,  0.040, 0.150)
 
             # Gate down when likely music (flatness low and flux low)
+            with self._lock:
+                P = dict(self._params)
             suppress = 1.0
-            if flat < 0.25 and self._flux_env < 0.002:
-                suppress = 0.35
+            if flat < P["flat_thresh"] and self._flux_env < P["flux_gate"]:
+                # 1 - music_suppress fraction blends toward strong suppression
+                s = max(0.0, min(1.0, float(P["music_suppress"])) )
+                suppress = 1.0 - (0.65 * s)  # between 1.0 and 0.35
 
             # Map to outputs 0..1
-            # Normalize by a rough scale (depends on device); clamp
+            # Normalize by configurable scale (depends on device); clamp
             def nz(x, s):
                 y = x / s
                 return 0.0 if y<0 else (1.0 if y>1.0 else float(y))
 
-            imp = nz(self._flux_env * suppress, 0.010)
-            road_o = nz(self._road_env * suppress, 0.020)
-            eng_o  = nz(self._eng_env,  0.015)
+            imp = nz(self._flux_env * suppress, P["imp_norm"]) * P["impact_gain"]
+            road_o = nz(self._road_env * suppress, P["road_norm"]) * P["road_gain"]
+            eng_o  = nz(self._eng_env,  P["eng_norm"]) * P["engine_gain"]
 
             bodyR = max(road_o, eng_o * 0.5)
             bodyL = max(road_o*0.8, eng_o * 0.3)
@@ -154,3 +173,12 @@ class AudioProbe:
         with self._lock:
             return dict(self._features)
 
+    def set_params(self, **kwargs):
+        # Update tunables at runtime (thread-safe)
+        with self._lock:
+            for k, v in kwargs.items():
+                if k in self._params:
+                    try:
+                        self._params[k] = float(v)
+                    except Exception:
+                        pass
