@@ -71,8 +71,9 @@ class Overlay(QtWidgets.QWidget):
         self._ind_pix = self._load_pix(["INDICATOR.png","INDICATOR.jpeg","indicator.png","indicator.jpeg"]) if not self._ind_svg else None
 
         self._apply_click_through()
-        self._apply_macos_all_spaces()  # best-effort: keep overlay on all Spaces/fullscreen
-        self._apply_macos_window_level() # best-effort: keep overlay above normal windows
+        self._apply_macos_all_spaces()   # mac: keep overlay on all Spaces/fullscreen (best-effort)
+        self._apply_macos_window_level() # mac: raise level (best-effort)
+        self._apply_windows_topmost()    # win: enforce HWND_TOPMOST
         self._apply_screen_geometry()
 
         # repaint tick
@@ -89,6 +90,11 @@ class Overlay(QtWidgets.QWidget):
             self._ontop_timer = QtCore.QTimer(self)
             self._ontop_timer.setInterval(1500)
             self._ontop_timer.timeout.connect(self._maintain_top)
+            self._ontop_timer.start()
+        elif platform.system() == "Windows":
+            self._ontop_timer = QtCore.QTimer(self)
+            self._ontop_timer.setInterval(2000)
+            self._ontop_timer.timeout.connect(self._apply_windows_topmost)
             self._ontop_timer.start()
 
         self.show()
@@ -181,6 +187,29 @@ class Overlay(QtWidgets.QWidget):
         try:
             self._apply_macos_all_spaces()
             self._apply_macos_window_level()
+        except Exception:
+            pass
+
+    # ---------- Windows: enforce topmost ----------
+    def _apply_windows_topmost(self):
+        if platform.system() != "Windows":
+            return
+        try:
+            import ctypes
+            from ctypes import wintypes
+            user32 = ctypes.windll.user32
+            SetWindowPos = user32.SetWindowPos
+            SetWindowPos.restype = wintypes.BOOL
+            SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+
+            HWND_TOPMOST = wintypes.HWND(-1)
+            SWP_NOMOVE = 0x0002
+            SWP_NOSIZE = 0x0001
+            SWP_NOACTIVATE = 0x0010
+            flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+
+            hwnd = wintypes.HWND(int(self.winId()))
+            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags)
         except Exception:
             pass
 
