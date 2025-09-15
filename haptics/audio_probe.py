@@ -59,16 +59,22 @@ class AudioProbe:
 
         try:
             # Try WASAPI loopback on Windows; default otherwise
-            kwargs = {}
+            kwargs = { 'dtype':'float32', 'latency':'low', 'samplerate': self._sr, 'channels': 2 }
             if hasattr(sd, 'WasapiSettings'):
                 try:
-                    kwargs['dtype'] = 'float32'
-                    kwargs['latency'] = 'low'
-                    kwargs['samplerate'] = self._sr
-                    kwargs['channels'] = 2
-                    # Use loopback if available
+                    # Pick an explicit loopback device if available
+                    dev_index = None
+                    try:
+                        devs = sd.query_devices()
+                        for i, d in enumerate(devs):
+                            name = str(d.get('name','')).lower()
+                            host = sd.query_hostapis()[d.get('hostapi',0)].get('name','').lower()
+                            if 'wasapi' in host and 'loopback' in name and d.get('max_input_channels',0) >= 1:
+                                dev_index = i; break
+                    except Exception:
+                        dev_index = None
                     ws = sd.WasapiSettings(loopback=True)
-                    self._stream = sd.InputStream(callback=self._cb, blocksize=self._bs, extra_settings=ws, **kwargs)
+                    self._stream = sd.InputStream(callback=self._cb, blocksize=self._bs, extra_settings=ws, device=dev_index, **kwargs)
                 except Exception:
                     self._stream = sd.InputStream(callback=self._cb, blocksize=self._bs, **kwargs)
             else:

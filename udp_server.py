@@ -24,6 +24,10 @@ try:
 except Exception:
     AudioProbe = None  # type: ignore
 try:
+    from haptics.memscan import MemoryScanManager
+except Exception:
+    MemoryScanManager = None  # type: ignore
+try:
     from hid_bridge import HIDBridge  # optional; only used if WHEELER_BRIDGE=hid
 except Exception:
     HIDBridge = None  # type: ignore
@@ -106,6 +110,23 @@ class UDPServer(QtCore.QObject):
         # Audio probe (fallback when no real FFB)
         self._audio_enabled = str(os.environ.get("WHEELER_AUDIO", "1")).strip().lower() not in ("0","off","false","no")
         self._audio = AudioProbe() if (AudioProbe and self._audio_enabled) else None
+        # Memory scan (optional, Windows only). Profile via env JSON-like or defaults empty
+        self._mem_enabled = str(os.environ.get("WHEELER_MEMSCAN", "0")).strip().lower() in ("1","on","true","yes")
+        self._mem = None
+        if self._mem_enabled and MemoryScanManager is not None:
+            try:
+                prof_env = os.environ.get("WHEELER_MEM_PROFILE", "").strip()
+                profile = {}
+                if prof_env:
+                    try:
+                        import json as _json
+                        profile = _json.loads(prof_env)
+                    except Exception:
+                        profile = {}
+                self._mem = MemoryScanManager(profile=profile)
+                LOG.log("🧠 Memory scan enabled")
+            except Exception as e:
+                LOG.log(f"⚠️ Memory scan init failed: {e}")
 
         # low-rate debug to verify we really send packets to the bridge
         self._last_dbg_ms = 0
@@ -452,19 +473,24 @@ class UDPServer(QtCore.QObject):
                     else:
                         dt = max(1e-4, min(0.050, (now_ms - self._hx_tprev) / 1000.0))
                     self._hx_tprev = now_ms
-                    # Use real FFB as input; route with current controls
+                    # Use current rumble as input; route with current controls + memscan hints
+                    ms = self._mem.get() if self._mem is not None else {}
+                    brakePressed = (brake > 0.4) or bool(ms.get('absGate', 0.0) > 0.5)
+                    throttlePressed = (throttle > 0.4)
+                    slipGate = float(ms.get('slipGate', 0.0))
+                    # Slightly bias right (slip) and impact channels if mem hints present
                     feat = self._hx.process(
                         dt, rumbleL, rumbleR,
                         lt=max(0.0, min(1.0, brake)),
                         rt=max(0.0, min(1.0, throttle)),
-                        speed01=0.0,
-                        brakePressed=(brake > 0.4),
-                        throttlePressed=(throttle > 0.4),
+                        speed01=float(ms.get('speed01', 0.0)),
+                        brakePressed=brakePressed,
+                        throttlePressed=throttlePressed,
                         isOffroad=False,
                     )
                     impact = float(feat.get("impact", 0.0))
                     trigL_out = float(feat.get("trigL", 0.0))
-                    trigR_out = float(feat.get("trigR", 0.0))
+                    trigR_out = float(feat.get("trigR", 0.0)) + 0.25 * slipGate
 
                 # UI/overlay
                 self.telemetry.emit(x_proc, throttle, brake, latG, seq, rumbleL, rumbleR, src)
