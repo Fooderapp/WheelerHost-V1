@@ -1,0 +1,6 @@
+version: "Apple Swift version 6.0.3 (swiftlang-6.0.3.1.10 clang-1600.0.30.1)"
+options: "9fdd4fab38a515ffd5631fe4e6d31cea36470fc88862c31cdba5269d3fe0f1a2"
+build_start_time: [1757947999, 641317000]
+build_end_time: [1757948000, 534073000]
+inputs:
+  "/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/Sources/main.swift": [1757947913, 63732341]

@@ -22,14 +22,12 @@ final class AudioCapture {
     var deviceName: String = "(default)"
 
     func start(deviceHint: String?) throws {
-        let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.record, mode: .default, options: [])
+        // On macOS, AVAudioSession is unavailable; AVAudioEngine taps default input.
+        // For system output capture, the user must set a loopback device (e.g., BlackHole) as input.
         if let hint = deviceHint, !hint.isEmpty {
-            // Best effort: select a data source matching hint
-            // AVAudioEngine doesn't expose output taps without loopback; rely on BlackHole/virtual input if present.
             self.deviceName = hint
         } else {
-            self.deviceName = session.currentRoute.inputs.first?.portName ?? "(default)"
+            self.deviceName = "Default Input"
         }
 
         let input = engine.inputNode
@@ -51,14 +49,14 @@ final class AudioCapture {
                 let atkEng  = 0.04, decEng  = 0.12
                 let atkImp  = 0.25, decImp  = 0.10
 
-                emaFast += (a >= emaFast ? atkFast : decFast) * (a - emaFast)
-                emaSlow += (a >= emaSlow ? atkSlow : decSlow) * (a - emaSlow)
-                let hf = max(0.0, emaFast - emaSlow)
-                roadEnv += ((hf >= roadEnv) ? atkRoad : decRoad) * (hf - roadEnv)
-                engEnv  += ((emaSlow >= engEnv) ? atkEng : decEng) * (emaSlow - engEnv)
-                let dSlow = max(0.0, emaSlow - prevSlow)
-                impactEnv += ((dSlow >= impactEnv) ? atkImp : decImp) * (dSlow - impactEnv)
-                prevSlow = emaSlow
+                self.emaFast += (a >= self.emaFast ? atkFast : decFast) * (a - self.emaFast)
+                self.emaSlow += (a >= self.emaSlow ? atkSlow : decSlow) * (a - self.emaSlow)
+                let hf = max(0.0, self.emaFast - self.emaSlow)
+                self.roadEnv += ((hf >= self.roadEnv) ? atkRoad : decRoad) * (hf - self.roadEnv)
+                self.engEnv  += ((self.emaSlow >= self.engEnv) ? atkEng : decEng) * (self.emaSlow - self.engEnv)
+                let dSlow = max(0.0, self.emaSlow - self.prevSlow)
+                self.impactEnv += ((dSlow >= self.impactEnv) ? atkImp : decImp) * (dSlow - self.impactEnv)
+                self.prevSlow = self.emaSlow
             }
 
             let now = Date().timeIntervalSince1970
@@ -78,7 +76,7 @@ final class AudioCapture {
         }
         try engine.start()
         // Print started status
-        let started = ["status":"started", "device": self.deviceName, "sr": Int(fmt.sampleRate), "ch": Int(fmt.channelCount)] as [String : Any]
+        let started = ["status":"started", "device": self.deviceName] as [String : Any]
         if let data = try? JSONSerialization.data(withJSONObject: started), let line = String(data: data, encoding: .utf8) { print(line); fflush(stdout) }
     }
 }
@@ -92,4 +90,3 @@ do {
     let err = ["status":"error","message":"\(error.localizedDescription)"]
     if let data = try? JSONSerialization.data(withJSONObject: err), let line = String(data: data, encoding: .utf8) { print(line); fflush(stdout) }
 }
-

@@ -22,28 +22,11 @@ class Program
     {
         try
         {
-            // Arguments (optional): device substring
-            string devHint = string.Join(" ", args ?? Array.Empty<string>()).Trim();
-
-            // Pick default render (output) or by substring
-            var enumerator = new MMDeviceEnumerator();
-            MMDevice? device = null;
-            if (!string.IsNullOrWhiteSpace(devHint))
-            {
-                var all = enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active);
-                device = all.FirstOrDefault(d => (d.FriendlyName ?? "").IndexOf(devHint, StringComparison.OrdinalIgnoreCase) >= 0);
-            }
-            device ??= enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
-            if (device == null)
-            {
-                Console.Error.WriteLine("No render device found");
-                return;
-            }
-
-            using var capture = new WasapiLoopbackCapture(device);
+            // Use default output device loopback for maximum compatibility
+            using var capture = new WasapiLoopbackCapture();
             int sr = capture.WaveFormat.SampleRate;
             int ch = capture.WaveFormat.Channels;
-            string devName = device.FriendlyName ?? "(default)";
+            string devName = "Default Output";
 
             Console.WriteLine(JsonSerializer.Serialize(new { status = "started", device = devName, sr, ch }));
             Console.Out.Flush();
@@ -132,4 +115,3 @@ class Program
 
     static double Clamp01(double v) => v < 0 ? 0 : (v > 1 ? 1 : v);
 }
-

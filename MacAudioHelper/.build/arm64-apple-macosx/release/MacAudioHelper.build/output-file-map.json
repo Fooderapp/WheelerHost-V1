@@ -1,0 +1,12 @@
+{
+  "": {
+    "dependencies": "/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/MacAudioHelper.build/MacAudioHelper.d",
+    "object": "/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/MacAudioHelper.build/MacAudioHelper.o",
+    "swift-dependencies": "/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/MacAudioHelper.build/master.swiftdeps"
+  },
+  "/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/Sources/main.swift": {
+    "object": "/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/MacAudioHelper.build/main.swift.o",
+    "swiftmodule": "/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/MacAudioHelper.build/main~partial.swiftmodule",
+    "swift-dependencies": "/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/MacAudioHelper.build/main.swiftdeps"
+  }
+}

@@ -1,0 +1,66 @@
+client:
+  name: basic
+  file-system: device-agnostic
+tools: {}
+targets:
+  "MacAudioHelper-arm64-apple-macosx15.0-release.exe": ["<MacAudioHelper-arm64-apple-macosx15.0-release.exe>"]
+  "MacAudioHelper-arm64-apple-macosx15.0-release.module": ["<MacAudioHelper-arm64-apple-macosx15.0-release.module>"]
+  "PackageStructure": ["<PackageStructure>"]
+  "main": ["<MacAudioHelper-arm64-apple-macosx15.0-release.exe>","<MacAudioHelper-arm64-apple-macosx15.0-release.module>"]
+  "test": ["<MacAudioHelper-arm64-apple-macosx15.0-release.exe>","<MacAudioHelper-arm64-apple-macosx15.0-release.module>"]
+default: "main"
+nodes:
+  "/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/Sources/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+commands:
+  "/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/MacAudioHelper.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/Sources/main.swift"]
+    outputs: ["/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/MacAudioHelper.build/sources"]
+    description: "Write auxiliary file /Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/MacAudioHelper.build/sources"
+
+  "/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/MacAudioHelper.product/Objects.LinkFileList":
+    tool: write-auxiliary-file
+    inputs: ["<link-file-list>","/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/MacAudioHelper.build/main.swift.o"]
+    outputs: ["/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/MacAudioHelper.product/Objects.LinkFileList"]
+    description: "Write auxiliary file /Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/MacAudioHelper.product/Objects.LinkFileList"
+
+  "/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/swift-version--58304C5D6DBC2206.txt":
+    tool: write-auxiliary-file
+    inputs: ["<swift-get-version>","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"]
+    outputs: ["/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/swift-version--58304C5D6DBC2206.txt"]
+    always-out-of-date: "true"
+    description: "Write auxiliary file /Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/swift-version--58304C5D6DBC2206.txt"
+
+  "<MacAudioHelper-arm64-apple-macosx15.0-release.exe>":
+    tool: phony
+    inputs: ["/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/MacAudioHelper"]
+    outputs: ["<MacAudioHelper-arm64-apple-macosx15.0-release.exe>"]
+
+  "<MacAudioHelper-arm64-apple-macosx15.0-release.module>":
+    tool: phony
+    inputs: ["/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/MacAudioHelper.build/main.swift.o","/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/Modules/MacAudioHelper.swiftmodule"]
+    outputs: ["<MacAudioHelper-arm64-apple-macosx15.0-release.module>"]
+
+  "C.MacAudioHelper-arm64-apple-macosx15.0-release.exe":
+    tool: shell
+    inputs: ["/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/MacAudioHelper.build/main.swift.o","/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/MacAudioHelper.product/Objects.LinkFileList"]
+    outputs: ["/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/MacAudioHelper"]
+    description: "Linking ./.build/arm64-apple-macosx/release/MacAudioHelper"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-L","/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release","-o","/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/MacAudioHelper","-module-name","MacAudioHelper","-Xlinker","-no_warn_duplicate_libraries","-emit-executable","-Xlinker","-dead_strip","-Xlinker","-alias","-Xlinker","_MacAudioHelper_main","-Xlinker","_main","-Xlinker","-rpath","-Xlinker","@loader_path","@/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/MacAudioHelper.product/Objects.LinkFileList","-target","arm64-apple-macosx13.0","-sdk","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.2.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-I","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g"]
+
+  "C.MacAudioHelper-arm64-apple-macosx15.0-release.module":
+    tool: shell
+    inputs: ["/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/Sources/main.swift","/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/swift-version--58304C5D6DBC2206.txt","/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/MacAudioHelper.build/sources"]
+    outputs: ["/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/MacAudioHelper.build/main.swift.o","/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/Modules/MacAudioHelper.swiftmodule"]
+    description: "Compiling Swift Module 'MacAudioHelper' (1 sources)"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-module-name","MacAudioHelper","-emit-dependencies","-emit-module","-emit-module-path","/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/Modules/MacAudioHelper.swiftmodule","-output-file-map","/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/MacAudioHelper.build/output-file-map.json","-whole-module-optimization","-num-threads","10","-c","@/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/MacAudioHelper.build/sources","-I","/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/Modules","-target","arm64-apple-macosx13.0","-O","-j10","-DSWIFT_PACKAGE","-module-cache-path","/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/.build/arm64-apple-macosx/release/ModuleCache","-parseable-output","-Xfrontend","-entry-point-function-name","-Xfrontend","MacAudioHelper_main","-color-diagnostics","-swift-version","5","-sdk","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.2.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-I","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g","-Xcc","-isysroot","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.2.sdk","-Xcc","-F","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-Xcc","-fPIC","-Xcc","-g","-package-name","macaudiohelper"]
+
+  "PackageStructure":
+    tool: package-structure-tool
+    inputs: ["/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/Sources/","/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/Package.swift","/Users/nagybertalan/Desktop/Wheeler/FORFLUTTERFLOW/WheelerHost-V1/MacAudioHelper/Package.resolved"]
+    outputs: ["<PackageStructure>"]
+    description: "Planning build"
+    allow-missing-inputs: true
+
