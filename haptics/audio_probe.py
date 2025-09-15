@@ -224,6 +224,34 @@ class AudioProbe:
         """Switch to a different input device (index from list_devices). None/-1 means Auto."""
         if sd is None:
             return False
+
+    def auto_pick_loopback(self) -> int | None:
+        """Try to open a WASAPI loopback stream by probing output devices.
+        Returns selected device index or None if failed.
+        """
+        if sd is None:
+            return None
+        try:
+            devs = sd.query_devices()
+            hostapis = sd.query_hostapis()
+            # Prefer WASAPI outputs, then any outputs
+            candidates = []
+            for i, d in enumerate(devs):
+                max_out = int(d.get('max_output_channels', 0) or 0)
+                host = str(hostapis[d.get('hostapi', 0)].get('name', ''))
+                if max_out > 0:
+                    candidates.append((('wasapi' in host.lower()), i))
+            # sort: WASAPI first
+            candidates.sort(key=lambda t: (0 if t[0] else 1))
+            for _, idx in candidates:
+                try:
+                    if self.switch_device(idx):
+                        return idx
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return None
         if isinstance(device_index, int) and device_index < 0:
             device_index = None
         try:

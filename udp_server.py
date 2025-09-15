@@ -132,6 +132,33 @@ class UDPServer(QtCore.QObject):
                     LOG.log("🔊 Audio: only Auto available (sounddevice/loopback may be missing)")
         except Exception:
             pass
+
+        # Environment override for audio device: index or substring
+        try:
+            if self._audio and self._audio_enabled:
+                dev_env = os.environ.get("WHEELER_AUDIO_DEV", "").strip()
+                chosen = None
+                if dev_env:
+                    try:
+                        idx = int(dev_env)
+                        chosen = idx
+                    except Exception:
+                        # substring match
+                        if list_audio_devices is not None:
+                            for i, lab in list_audio_devices():
+                                if dev_env.lower() in str(lab).lower():
+                                    chosen = i; break
+                    if chosen is not None:
+                        ok = self._audio.switch_device(chosen)
+                        LOG.log(f"🔊 Audio device from env '{dev_env}' -> {chosen}: {'OK' if ok else 'FAIL'}")
+                # If still Auto and only Auto listed, try autopick loopback
+                if chosen is None and self._audio:
+                    picked = self._audio.auto_pick_loopback()
+                    if picked is not None:
+                        self._audio_dev = picked
+                        LOG.log(f"🔊 Audio auto-picked loopback device {picked}")
+        except Exception:
+            pass
         # Memory scan (optional, Windows only). Profile via env JSON-like or defaults empty
         self._mem_enabled = str(os.environ.get("WHEELER_MEMSCAN", "0")).strip().lower() in ("1","on","true","yes")
         self._mem = None
