@@ -155,6 +155,9 @@ class UDPServer(QtCore.QObject):
         self._aud_off_thresh = 0.05 # turn off when energy <= this (with hold)
         self._aud_max_burst_ms = 600
         self._audio_last_log_ms = 0
+        # Audio pulse scheduler (convert energy to short pulses at variable Hz)
+        self._aud_pulse_next_ms = 0
+        self._aud_pulse_w_ms = 22
 
         # Log available audio devices at startup (Windows loopback most relevant)
         try:
@@ -555,7 +558,9 @@ class UDPServer(QtCore.QObject):
                                 if energy >= self._aud_on_thresh or imp >= 0.12:
                                     self._aud_gate_on = True
                                     self._aud_gate_ton_ms = now_ms
-                                    rumbleL, rumbleR = rL0, rR0
+                                    # start a new pulse train immediately; pulses are short non-zero rumble bursts
+                                    self._aud_pulse_next_ms = now_ms
+                                    rumbleL, rumbleR = 0.0, 0.0
                                 else:
                                     rumbleL, rumbleR = 0.0, 0.0
                             else:
@@ -566,7 +571,20 @@ class UDPServer(QtCore.QObject):
                                     self._aud_gate_on = False
                                     rumbleL, rumbleR = 0.0, 0.0
                                 else:
-                                    rumbleL, rumbleR = rL0, rR0
+                                    # Convert energy into short pulses at variable Hz (avoid long continuous bed)
+                                    e = max(0.0, min(1.0, energy))
+                                    hz = 6.0 + 16.0 * (e ** 0.85)  # 6..22 Hz
+                                    period_ms = int(max(30.0, min(220.0, 1000.0 / hz)))
+                                    self._aud_pulse_w_ms = int(18 + 16 * e)  # 18..34 ms width
+                                    if self._aud_pulse_next_ms <= 0:
+                                        self._aud_pulse_next_ms = now_ms
+                                    # advance schedule to current time window
+                                    while now_ms - self._aud_pulse_next_ms > period_ms:
+                                        self._aud_pulse_next_ms += period_ms
+                                    if (now_ms - self._aud_pulse_next_ms) <= self._aud_pulse_w_ms:
+                                        rumbleL, rumbleR = rL0, rR0
+                                    else:
+                                        rumbleL, rumbleR = 0.0, 0.0
                             src = "audio"
                             # Occasional log for audio rumble to aid debugging
                             if now_ms - self._audio_last_log_ms > 800:
