@@ -218,14 +218,14 @@ class MainWindow(QtWidgets.QWidget):
         grid.addLayout(leftCol,  1, 0, 1, 1)
         grid.addLayout(rightCol, 1, 1, 1, 1)
 
-        # Wire overlay controls
-        self.chkBar.toggled.connect(self.overlay.set_show_bar)
-        self.chkSides.toggled.connect(self.overlay.set_show_sides)
-        self.spinScale.valueChanged.connect(self.overlay.set_scale)
-        self.spinBlur.valueChanged.connect(self.overlay.set_blur_amount)
-        self.spinGamma.valueChanged.connect(self.overlay.set_curve_gamma)
-        self.spinAlpha.valueChanged.connect(self.overlay.set_alpha_strength)
-        self.btnResetOverlay.clicked.connect(self.overlay.reset_all)
+        # Wire overlay controls (broadcast to all overlays)
+        self.chkBar.toggled.connect(lambda on: self._for_each_overlay(lambda o: o.set_show_bar(on)))
+        self.chkSides.toggled.connect(lambda on: self._for_each_overlay(lambda o: o.set_show_sides(on)))
+        self.spinScale.valueChanged.connect(lambda v: self._for_each_overlay(lambda o: o.set_scale(v)))
+        self.spinBlur.valueChanged.connect(lambda v: self._for_each_overlay(lambda o: o.set_blur_amount(v)))
+        self.spinGamma.valueChanged.connect(lambda v: self._for_each_overlay(lambda o: o.set_curve_gamma(v)))
+        self.spinAlpha.valueChanged.connect(lambda v: self._for_each_overlay(lambda o: o.set_alpha_strength(v)))
+        self.btnResetOverlay.clicked.connect(lambda: self._for_each_overlay(lambda o: o.reset_all()))
         # Edit overlay click‑through control
         self.chkEditOverlay.toggled.connect(lambda on: self._for_each_overlay(lambda o: o.set_input_enabled(on)))
 
@@ -286,7 +286,6 @@ class MainWindow(QtWidgets.QWidget):
         any_vis = any(o.isVisible() for o in self.overlays)
         new_vis = not any_vis
         self._for_each_overlay(lambda o: o.set_overlay_visible(new_vis))
-        self._sync_overlay_drag()
 
     def _resetOverlay(self):
         self._for_each_overlay(lambda o: o.reset_all())
