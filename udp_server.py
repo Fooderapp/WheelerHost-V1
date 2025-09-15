@@ -25,6 +25,10 @@ except Exception:
     AudioProbe = None  # type: ignore
     list_audio_devices = None  # type: ignore
 try:
+    from haptics.audio_helper_proc import AudioHelperProc
+except Exception:
+    AudioHelperProc = None  # type: ignore
+try:
     from haptics.memscan import MemoryScanManager
 except Exception:
     MemoryScanManager = None  # type: ignore
@@ -112,6 +116,18 @@ class UDPServer(QtCore.QObject):
         self._audio_enabled = str(os.environ.get("WHEELER_AUDIO", "1")).strip().lower() not in ("0","off","false","no")
         self._audio_dev = -1  # -1 = Auto
         self._audio = AudioProbe(device=None) if (AudioProbe and self._audio_enabled) else None
+        # Windows helper (NAudio) for robust loopback without device config
+        self._audio_helper = None
+        if platform.system().lower() == 'windows' and str(os.environ.get("WHEELER_AUDIO_HELPER","1")).strip().lower() not in ("0","off","false","no"):
+            try:
+                if AudioHelperProc is not None:
+                    self._audio_helper = AudioHelperProc(hint=str(os.environ.get("WHEELER_AUDIO_DEV","")))
+                    if self._audio_helper.start():
+                        LOG.log("🔊 Audio helper started (NAudio WASAPI loopback)")
+                    else:
+                        self._audio_helper = None
+            except Exception as e:
+                LOG.log(f"🔊 Audio helper start failed: {e}")
         # Audio gating to avoid constant bed
         self._aud_gate_on = False
         self._aud_gate_ton_ms = 0
@@ -496,13 +512,16 @@ class UDPServer(QtCore.QObject):
                     # No bed/mask/hybrid modifications — pass as-is
                 else:
                     # No fresh real FFB
-                    if self._ffb_passthrough_only or not self._audio:
+                    # Prefer helper if available; else use internal probe
+                    helper_ok = (self._audio_helper is not None)
+                    probe_ok = (self._audio is not None)
+                    if self._ffb_passthrough_only or (not helper_ok and not probe_ok):
                         rumbleL = 0.0
                         rumbleR = 0.0
                         src = "none"
                     else:
                         try:
-                            feat = self._audio.get()
+                            feat = (self._audio_helper.get() if helper_ok else self._audio.get())
                             # Map audio features to rumble: use bodyL/bodyR and a dash of impact
                             bodyL = float(max(0.0, min(1.0, feat.get("bodyL", 0.0))))
                             bodyR = float(max(0.0, min(1.0, feat.get("bodyR", 0.0))))
@@ -531,7 +550,8 @@ class UDPServer(QtCore.QObject):
                             src = "audio"
                             # Occasional log for audio rumble to aid debugging
                             if now_ms - self._audio_last_log_ms > 800:
-                                LOG.log(f"🔊 AUDIO rumble L={rumbleL:.2f} R={rumbleR:.2f} gate={'ON' if self._aud_gate_on else 'OFF'} dev={self._audio_dev}")
+                                devlabel = self._audio_helper.device_name() if helper_ok else str(self._audio_dev)
+                                LOG.log(f"🔊 AUDIO rumble L={rumbleL:.2f} R={rumbleR:.2f} gate={'ON' if self._aud_gate_on else 'OFF'} dev={devlabel}")
                                 self._audio_last_log_ms = now_ms
                         except Exception:
                             rumbleL = 0.0; rumbleR = 0.0; src = "none"
@@ -595,6 +615,11 @@ class UDPServer(QtCore.QObject):
         except Exception: pass
         try: self._bridge.close()
         except Exception: pass
+        try:
+            if getattr(self, '_audio_helper', None) is not None:
+                self._audio_helper.close()
+        except Exception:
+            pass
         LOG.log("🛑 UDP server stopped")
 
     # ----- audio tuning -----
