@@ -9,7 +9,11 @@ from PySide6 import QtCore
 
 from vigem_bridge import ViGEmBridge, XGamepad
 try:
-    from haptics.rumble_expander import RumbleExpander
+from haptics.rumble_expander import RumbleExpander
+try:
+    from haptics.ffb_synth import FfbSynthEngine
+except Exception:
+    FfbSynthEngine = None  # type: ignore
 except Exception:
     RumbleExpander = None  # type: ignore
 try:
@@ -92,6 +96,10 @@ class UDPServer(QtCore.QObject):
         # Haptics: signal expander (maps 2‑ch FFB to richer features)
         self._hx = RumbleExpander() if RumbleExpander else None
         self._hx_tprev = None
+        # FFB Synth (when no real FFB and passthrough disabled)
+        self._synth = FfbSynthEngine() if 'FfbSynthEngine' in globals() and FfbSynthEngine else None
+        self._syn_prev_ms = None
+        self._syn_prev_x = 0.0
 
         # low-rate debug to verify we really send packets to the bridge
         self._last_dbg_ms = 0
@@ -426,10 +434,25 @@ class UDPServer(QtCore.QObject):
                             rumbleR = 0.0
                     # No hybrid blending; we avoid telemetry-driven synth by default
                 else:
-                    # No fresh real FFB: if passthrough-only, keep silent; else (legacy) we could synthesize, but disabled per request
-                    rumbleL = 0.0
-                    rumbleR = 0.0
-                    src = "none"
+                    # No fresh real FFB
+                    if self._ffb_passthrough_only or self._synth is None:
+                        rumbleL = 0.0
+                        rumbleR = 0.0
+                        src = "none"
+                    else:
+                        # Synthesize from current steering and rate of change
+                        if self._syn_prev_ms is None:
+                            dt = 1.0/120.0
+                        else:
+                            dt = max(1e-4, min(0.05, (now_ms - self._syn_prev_ms)/1000.0))
+                        dx = 0.0 if self._syn_prev_ms is None else (use_lx - self._syn_prev_x) / max(1e-4, dt)
+                        self._syn_prev_ms = now_ms
+                        self._syn_prev_x = use_lx
+                        try:
+                            rumbleL, rumbleR = self._synth.process(dt, use_lx, dx, throttle, brake, latG)
+                            src = "synth"
+                        except Exception:
+                            rumbleL = 0.0; rumbleR = 0.0; src = "none"
 
                 # Haptics expander (derive impact/trigger cues for phone)
                 impact = 0.0; trigL_out = 0.0; trigR_out = 0.0
