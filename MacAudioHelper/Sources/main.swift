@@ -7,6 +7,7 @@ struct AudioFeatures: Codable {
     let bodyL: Double
     let bodyR: Double
     let impact: Double
+    let engine: Double
     let device: String
 }
 
@@ -67,7 +68,7 @@ final class AudioCapture {
                 let imp  = min(1.0, max(0.0, self.impactEnv / 0.01))
                 let bodyR = max(road, 0.5 * eng)
                 let bodyL = max(0.8 * road, 0.3 * eng)
-                let obj = AudioFeatures(bodyL: bodyL, bodyR: bodyR, impact: imp, device: self.deviceName)
+                let obj = AudioFeatures(bodyL: bodyL, bodyR: bodyR, impact: imp, engine: eng, device: self.deviceName)
                 if let data = try? JSONEncoder().encode(obj) {
                     if let line = String(data: data, encoding: .utf8) { print(line) }
                     fflush(stdout)

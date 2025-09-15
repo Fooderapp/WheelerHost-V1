@@ -6,7 +6,7 @@ class AudioHelperProc:
         self._proc: Optional[subprocess.Popen] = None
         self._th: Optional[threading.Thread] = None
         self._stop = threading.Event()
-        self._latest: Dict[str, float] = {"bodyL":0.0, "bodyR":0.0, "impact":0.0}
+        self._latest: Dict[str, float] = {"bodyL":0.0, "bodyR":0.0, "impact":0.0, "engine":0.0}
         self._device_name: str = ""
         self._hint = hint
 
@@ -71,6 +71,7 @@ class AudioHelperProc:
                             'bodyL': float(obj.get('bodyL') or 0.0),
                             'bodyR': float(obj.get('bodyR') or 0.0),
                             'impact': float(obj.get('impact') or 0.0),
+                            'engine': float(obj.get('engine') or 0.0),
                         }
                         if obj.get('device'):
                             self._device_name = str(obj['device'])

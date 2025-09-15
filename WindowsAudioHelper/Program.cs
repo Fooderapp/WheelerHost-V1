@@ -13,6 +13,7 @@ class AudioFeatures
     public double bodyL { get; set; }
     public double bodyR { get; set; }
     public double impact { get; set; }
+    public double engine { get; set; }
     public string device { get; set; } = "";
 }
 
@@ -87,7 +88,7 @@ class Program
                     double bodyR = Math.Max(road, 0.5 * eng);
                     double bodyL = Math.Max(0.8 * road, 0.3 * eng);
 
-                    var obj = new AudioFeatures { bodyL = bodyL, bodyR = bodyR, impact = imp, device = devName };
+                    var obj = new AudioFeatures { bodyL = bodyL, bodyR = bodyR, impact = imp, engine = eng, device = devName };
                     Console.WriteLine(JsonSerializer.Serialize(obj));
                     Console.Out.Flush();
                 }

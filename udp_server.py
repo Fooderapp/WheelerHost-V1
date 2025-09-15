@@ -553,6 +553,7 @@ class UDPServer(QtCore.QObject):
                             rL0 = max(bodyL, 0.35 * imp)
                             rR0 = max(bodyR, 0.45 * imp)
                             energy = max(rL0, rR0)
+                            eng_val = float(max(0.0, min(1.0, feat.get("engine", energy))))
                             # Gate/hysteresis
                             if not self._aud_gate_on:
                                 if energy >= self._aud_on_thresh or imp >= 0.12:
@@ -571,9 +572,9 @@ class UDPServer(QtCore.QObject):
                                     self._aud_gate_on = False
                                     rumbleL, rumbleR = 0.0, 0.0
                                 else:
-                                    # Convert energy into short pulses at variable Hz (avoid long continuous bed)
-                                    e = max(0.0, min(1.0, energy))
-                                    hz = 6.0 + 16.0 * (e ** 0.85)  # 6..22 Hz
+                                    # Convert engine band into short pulses at variable Hz (avoid long continuous bed)
+                                    e = eng_val
+                                    hz = 8.0 + 28.0 * (e ** 0.85)  # ~8..36 Hz following engine
                                     period_ms = int(max(30.0, min(220.0, 1000.0 / hz)))
                                     self._aud_pulse_w_ms = int(18 + 16 * e)  # 18..34 ms width
                                     if self._aud_pulse_next_ms <= 0:

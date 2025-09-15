@@ -61,7 +61,7 @@ class AudioProbe:
         self._bs = int(blocksize)
         self._device = device if (isinstance(device, int) and device >= 0) else None
         self._lock = threading.Lock()
-        self._features: Dict[str, float] = {"bodyL":0.0, "bodyR":0.0, "impact":0.0}
+        self._features: Dict[str, float] = {"bodyL":0.0, "bodyR":0.0, "impact":0.0, "engine":0.0}
         # Tunables (thread-safe via _lock). Defaults aimed for general content.
         self._params = {
             "road_gain": 1.0,
@@ -202,7 +202,7 @@ class AudioProbe:
             bodyL = max(road_o*0.8, eng_o * 0.3)
 
             with self._lock:
-                self._features = {"bodyL": bodyL, "bodyR": bodyR, "impact": imp}
+                self._features = {"bodyL": bodyL, "bodyR": bodyR, "impact": imp, "engine": eng_o}
         except Exception:
             pass
 
