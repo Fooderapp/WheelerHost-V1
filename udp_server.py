@@ -111,6 +111,13 @@ class UDPServer(QtCore.QObject):
         self._audio_enabled = str(os.environ.get("WHEELER_AUDIO", "1")).strip().lower() not in ("0","off","false","no")
         self._audio_dev = -1  # -1 = Auto
         self._audio = AudioProbe(device=None) if (AudioProbe and self._audio_enabled) else None
+        # Audio gating to avoid constant bed
+        self._aud_gate_on = False
+        self._aud_gate_ton_ms = 0
+        self._aud_on_thresh = 0.12  # turn on when energy >= this
+        self._aud_off_thresh = 0.05 # turn off when energy <= this (with hold)
+        self._aud_max_burst_ms = 600
+        self._audio_last_log_ms = 0
         # Memory scan (optional, Windows only). Profile via env JSON-like or defaults empty
         self._mem_enabled = str(os.environ.get("WHEELER_MEMSCAN", "0")).strip().lower() in ("1","on","true","yes")
         self._mem = None
@@ -459,9 +466,32 @@ class UDPServer(QtCore.QObject):
                             bodyL = float(max(0.0, min(1.0, feat.get("bodyL", 0.0))))
                             bodyR = float(max(0.0, min(1.0, feat.get("bodyR", 0.0))))
                             imp   = float(max(0.0, min(1.0, feat.get("impact", 0.0))))
-                            rumbleL = max(bodyL, 0.35 * imp)
-                            rumbleR = max(bodyR, 0.45 * imp)
+                            # pre-rumble from features
+                            rL0 = max(bodyL, 0.35 * imp)
+                            rR0 = max(bodyR, 0.45 * imp)
+                            energy = max(rL0, rR0)
+                            # Gate/hysteresis
+                            if not self._aud_gate_on:
+                                if energy >= self._aud_on_thresh or imp >= 0.12:
+                                    self._aud_gate_on = True
+                                    self._aud_gate_ton_ms = now_ms
+                                    rumbleL, rumbleR = rL0, rR0
+                                else:
+                                    rumbleL, rumbleR = 0.0, 0.0
+                            else:
+                                if (now_ms - self._aud_gate_ton_ms) > self._aud_max_burst_ms and energy <= self._aud_off_thresh:
+                                    self._aud_gate_on = False
+                                    rumbleL, rumbleR = 0.0, 0.0
+                                elif energy <= self._aud_off_thresh and imp < 0.10:
+                                    self._aud_gate_on = False
+                                    rumbleL, rumbleR = 0.0, 0.0
+                                else:
+                                    rumbleL, rumbleR = rL0, rR0
                             src = "audio"
+                            # Occasional log for audio rumble to aid debugging
+                            if now_ms - self._audio_last_log_ms > 800:
+                                LOG.log(f"🔊 AUDIO rumble L={rumbleL:.2f} R={rumbleR:.2f} gate={'ON' if self._aud_gate_on else 'OFF'} dev={self._audio_dev}")
+                                self._audio_last_log_ms = now_ms
                         except Exception:
                             rumbleL = 0.0; rumbleR = 0.0; src = "none"
 
