@@ -36,13 +36,18 @@ def list_devices():
         devs = sd.query_devices()
         hostapis = sd.query_hostapis()
         for i, d in enumerate(devs):
-            max_in = d.get('max_input_channels', 0)
-            host = hostapis[d.get('hostapi', 0)].get('name', '')
-            name = d.get('name', '')
-            label = f"{i}: {name} [{host}]"
-            if max_in and max_in > 0:
+            max_in = int(d.get('max_input_channels', 0) or 0)
+            max_out = int(d.get('max_output_channels', 0) or 0)
+            host = str(hostapis[d.get('hostapi', 0)].get('name', ''))
+            name = str(d.get('name', ''))
+            host_l = host.lower()
+            name_l = name.lower()
+            # Build a friendly label and include WASAPI output devices as loopback candidates
+            if 'wasapi' in host_l and max_out > 0:
+                label = f"{i}: {name} [WASAPI output — loopback]"
                 out.append((i, label))
-            elif 'wasapi' in host.lower() and 'loopback' in name.lower():
+            elif max_in > 0:
+                label = f"{i}: {name} [{host}]"
                 out.append((i, label))
     except Exception:
         pass
