@@ -20,9 +20,10 @@ try:
 except Exception:
     RumbleExpander = None  # type: ignore
 try:
-    from haptics.audio_probe import AudioProbe
+    from haptics.audio_probe import AudioProbe, list_devices as list_audio_devices
 except Exception:
     AudioProbe = None  # type: ignore
+    list_audio_devices = None  # type: ignore
 try:
     from haptics.memscan import MemoryScanManager
 except Exception:
@@ -118,6 +119,19 @@ class UDPServer(QtCore.QObject):
         self._aud_off_thresh = 0.05 # turn off when energy <= this (with hold)
         self._aud_max_burst_ms = 600
         self._audio_last_log_ms = 0
+
+        # Log available audio devices at startup (Windows loopback most relevant)
+        try:
+            if list_audio_devices is not None:
+                devs = list_audio_devices()
+                if devs and len(devs) > 1:
+                    LOG.log("🔊 Audio devices detected:")
+                    for idx, label in devs:
+                        LOG.log(f"   [{idx}] {label}")
+                else:
+                    LOG.log("🔊 Audio: only Auto available (sounddevice/loopback may be missing)")
+        except Exception:
+            pass
         # Memory scan (optional, Windows only). Profile via env JSON-like or defaults empty
         self._mem_enabled = str(os.environ.get("WHEELER_MEMSCAN", "0")).strip().lower() in ("1","on","true","yes")
         self._mem = None
@@ -598,9 +612,32 @@ class UDPServer(QtCore.QObject):
         elif self._audio is not None:
             try:
                 ok = self._audio.switch_device(idx)
-                LOG.log(f"🔊 Audio device switch to {idx}: {'OK' if ok else 'FAIL'}")
+                label = None
+                try:
+                    if list_audio_devices is not None:
+                        for i, lab in list_audio_devices():
+                            if i == idx:
+                                label = lab; break
+                except Exception:
+                    pass
+                LOG.log(f"🔊 Audio device switch to {idx}{(' '+str(label)) if label else ''}: {'OK' if ok else 'FAIL'}")
             except Exception as e:
                 LOG.log(f"🔊 Audio device switch error: {e}")
+
+    @QtCore.Slot(float)
+    def set_audio_gate_on(self, v: float):
+        self._aud_on_thresh = max(0.0, min(1.0, float(v)))
+        LOG.log(f"🎚️ Audio gate ON threshold = {self._aud_on_thresh:.2f}")
+
+    @QtCore.Slot(float)
+    def set_audio_gate_off(self, v: float):
+        self._aud_off_thresh = max(0.0, min(1.0, float(v)))
+        LOG.log(f"🎚️ Audio gate OFF threshold = {self._aud_off_thresh:.2f}")
+
+    @QtCore.Slot(int)
+    def set_audio_gate_hold(self, ms: int):
+        self._aud_max_burst_ms = max(0, int(ms))
+        LOG.log(f"🎚️ Audio gate hold = {self._aud_max_burst_ms} ms")
 
     def _init_bridge(self):
         """Select and initialize input bridge with comprehensive platform support."""
