@@ -305,6 +305,31 @@ class _Haptics {
   }
 }
 
+class _EqBandState {
+  _EqBandState(this.label, this.seedOffset);
+
+  final String label;
+  final int seedOffset;
+
+  double smoothHz = 0.0;
+  double smoothInt = 0.0;
+  double phase = 0.0;
+  int lastMs = 0;
+  bool active = false;
+  double floor = 0.0;
+  int lastLogMs = 0;
+
+  void reset() {
+    smoothHz = 0.0;
+    smoothInt = 0.0;
+    phase = 0.0;
+    lastMs = 0;
+    active = false;
+    floor = 0.0;
+    lastLogMs = 0;
+  }
+}
+
 // ─── Controller ───────────────────────────────────────────────────────────────
 class _UdpController with WidgetsBindingObserver {
   static final _UdpController I = _UdpController._();
@@ -376,15 +401,23 @@ class _UdpController with WidgetsBindingObserver {
   double fbTrigR = 0.0; // Slip gate [0..1]
   double fbImpact = 0.0; // Impact strength [0..1]
   // Audio equalizer feedback (from host)
-  double fbAudInt = 0.0; // 0..1 overall audio intensity
-  double fbAudHz = 0.0;  // target feel rate (approx 80..230 Hz)
-  int _lastEqLogMs = 0;  // throttle equalizer debug logs
-  // Audio equalizer scheduler state (phase-accurate tick timing)
-  double _eqPhase = 0.0; // cycles [0..1)
-  int _eqLastMs = 0;     // last integration timestamp
-  double _eqSmoothHz = 0.0; // smoothed effective Hz
+  double fbAudInt = 0.0; // 0..1 overall audio intensity (legacy single-band)
+  double fbAudHz = 0.0;  // target feel rate (legacy)
+  double fbAudLowInt = 0.0; // split-band low component [0..1]
+  double fbAudLowHz = 0.0;  // split-band low Hz (approx 8..60)
+  double fbAudHighInt = 0.0; // split-band high component [0..1]
+  double fbAudHighHz = 0.0;  // split-band high Hz (approx 40..240)
+  bool _seenEqSplit = false; // host reported split-band payload once
+  int _lastEqLogMs = 0;      // equalizer debug logs throttling
+  // Legacy single-band scheduler state (phase-accurate tick timing)
+  double _eqPhase = 0.0;     // cycles [0..1)
+  int _eqLastMs = 0;         // last integration timestamp
+  double _eqSmoothHz = 0.0;  // smoothed effective Hz
   double _eqSmoothInt = 0.0; // smoothed intensity
-  bool _eqActive = false; // whether EQ driver is actively pulsing
+  bool _eqActive = false;    // whether legacy EQ driver is pulsing
+  // Split-band schedulers
+  final _EqBandState _eqLow = _EqBandState('LOW', 431);
+  final _EqBandState _eqHigh = _EqBandState('HIGH', 947);
   // Local rate limiters for expanded channels
   int _lastAbsTickMs = 0;
   int _lastSlipTickMs = 0;
@@ -501,16 +534,39 @@ class _UdpController with WidgetsBindingObserver {
             if (impact != null) fbImpact = impact.clamp(0.0, 1.0);
             // Audio equalizer
             final aInt = (obj['audInt'] as num?)?.toDouble();
-            if (aInt != null) fbAudInt = aInt.clamp(0.0, 1.0);
+            if (aInt != null) fbAudInt = aInt.clamp(0.0, 1.0).toDouble();
             final aHz = (obj['audHz'] as num?)?.toDouble();
-            if (aHz != null) fbAudHz = aHz.clamp(6.0, 240.0);
+            if (aHz != null) fbAudHz = aHz.clamp(6.0, 240.0).toDouble();
+            final lowInt = (obj['audLowInt'] as num?)?.toDouble();
+            if (lowInt != null) {
+              fbAudLowInt = lowInt.clamp(0.0, 1.0).toDouble();
+              _seenEqSplit = true;
+            }
+            final lowHz = (obj['audLowHz'] as num?)?.toDouble();
+            if (lowHz != null) {
+              fbAudLowHz = lowHz.clamp(4.0, 160.0).toDouble();
+              _seenEqSplit = true;
+            }
+            final highInt = (obj['audHighInt'] as num?)?.toDouble();
+            if (highInt != null) {
+              fbAudHighInt = highInt.clamp(0.0, 1.0).toDouble();
+              _seenEqSplit = true;
+            }
+            final highHz = (obj['audHighHz'] as num?)?.toDouble();
+            if (highHz != null) {
+              fbAudHighHz = highHz.clamp(10.0, 260.0).toDouble();
+              _seenEqSplit = true;
+            }
             fbLastRxMs = DateTime.now().millisecondsSinceEpoch;
             // Debug: log received EQ values occasionally
             final nowDbg = fbLastRxMs;
             if (nowDbg - _lastEqLogMs > 500) {
               // ignore excessive spam
+              final split = _seenEqSplit
+                  ? ' low=${fbAudLowInt.toStringAsFixed(2)}@${fbAudLowHz.toStringAsFixed(1)} high=${fbAudHighInt.toStringAsFixed(2)}@${fbAudHighHz.toStringAsFixed(1)}'
+                  : '';
               debugPrint(
-                  '[EQ] rx audInt=${fbAudInt.toStringAsFixed(2)} audHz=${fbAudHz.toStringAsFixed(1)} rumbleL=${fbRumbleL.toStringAsFixed(2)} rumbleR=${fbRumbleR.toStringAsFixed(2)}');
+                  '[EQ] rx audInt=${fbAudInt.toStringAsFixed(2)} audHz=${fbAudHz.toStringAsFixed(1)}$split rumbleL=${fbRumbleL.toStringAsFixed(2)} rumbleR=${fbRumbleR.toStringAsFixed(2)}');
               _lastEqLogMs = nowDbg;
             }
 
@@ -599,6 +655,16 @@ class _UdpController with WidgetsBindingObserver {
 
     fbRumbleL = fbRumbleR = 0.0;
     fbLastRxMs = 0;
+    fbAudInt = 0.0;
+    fbAudHz = 0.0;
+    fbAudLowInt = 0.0;
+    fbAudLowHz = 0.0;
+    fbAudHighInt = 0.0;
+    fbAudHighHz = 0.0;
+    _seenEqSplit = false;
+    _eqLow.reset();
+    _eqHigh.reset();
+    _lastEqLogMs = 0;
     // Reset EQ scheduler
     _eqPhase = 0.0;
     _eqLastMs = 0;
@@ -731,78 +797,21 @@ class _UdpController with WidgetsBindingObserver {
       // Drop EQ state when feed is stale
       _eqActive = false;
       _eqLastMs = 0;
+      _eqPhase = 0.0;
+      _eqSmoothHz = 0.0;
+      _eqSmoothInt = 0.0;
+      _eqLow.reset();
+      _eqHigh.reset();
       return;
     }
 
     final L = fbRumbleL.clamp(0.0, 1.0);
     final R = fbRumbleR.clamp(0.0, 1.0);
 
-    // Audio equalizer impulses (phase-accurate, NOT continuous bed).
-    // Steering logic is separate.
-    final aIntRaw = fbAudInt.clamp(0.0, 1.0);
-    final aHzRaw = fbAudHz.clamp(6.0, 240.0);
-    const onThresh = 0.03;
-    if (aIntRaw > onThresh) {
-      // Smooth incoming values slightly to avoid jittery feel
-      const k = 0.25; // EMA factor
-      _eqSmoothHz = (_eqSmoothHz == 0.0)
-          ? aHzRaw
-          : (k * aHzRaw + (1 - k) * _eqSmoothHz);
-      _eqSmoothInt = (_eqSmoothInt == 0.0)
-          ? aIntRaw
-          : (k * aIntRaw + (1 - k) * _eqSmoothInt);
-
-      // Integrate phase using elapsed time for precise frequency
-      if (_eqLastMs == 0) {
-        _eqLastMs = now;
-        _eqActive = true;
-        // Ensure continuous bed is off to avoid interactions
-        _Haptics.stopContinuous();
-      }
-
-      final dt = ((_eqLastMs == 0) ? 0.0 : (now - _eqLastMs) / 1000.0);
-      _eqLastMs = now;
-
-      // Cap to practical tick rates for devices
-      final effHz = _eqSmoothHz.clamp(6.0, 48.0);
-      _eqPhase += effHz * dt;
-
-      // Tick emission count; avoid backlog explosions
-      int emit = _eqPhase.floor();
-      if (emit > 3) emit = 3; // hard cap per frame
-      _eqPhase -= emit;
-
-      if (emit > 0) {
-        // Map intensity perceptually; preserve stereo balance as sharpness bias
-        final powI = math.pow(_eqSmoothInt, 0.90).toDouble();
-        final baseIntensity = (0.10 + 0.82 * powI).clamp(0.10, 1.00);
-        final balance = (R - L).clamp(-1.0, 1.0);
-        final sharp = (0.40 + 0.20 * balance.abs()).clamp(0.30, 0.85);
-
-        // Slight micro-variation avoids monotone feel at low Hz
-        for (int i = 0; i < emit; i++) {
-          final jitter = 0.04 * (0.5 - math.Random(now + i).nextDouble());
-          final intensity = (baseIntensity + jitter).clamp(0.10, 1.00);
-          _Haptics.tick(strength: intensity, sharpness: sharp, maxHz: 60);
-        }
-
-        final nowLog = now;
-        if (nowLog - _lastEqLogMs > 250) {
-          debugPrint('[EQ] hz=${effHz.toStringAsFixed(1)} int=${baseIntensity.toStringAsFixed(2)} emit=$emit phase=${_eqPhase.toStringAsFixed(2)}');
-          _lastEqLogMs = nowLog;
-        }
-      }
+    if (_seenEqSplit) {
+      _driveSplitEq(now, L, R);
     } else {
-      if (_eqActive) {
-        // Transitioned below threshold; stop and clear state
-        final nowLog = now;
-        if (nowLog - _lastEqLogMs > 500) {
-          debugPrint('[EQ] below threshold audInt=${aIntRaw.toStringAsFixed(2)} (pause)');
-          _lastEqLogMs = nowLog;
-        }
-      }
-      _eqActive = false;
-      _eqLastMs = now; // keep timebase for quick resume
+      _driveLegacyEq(now, L, R);
     }
 
     // Spike detection v. EMAs (impacts/ABS etc.)
@@ -856,6 +865,225 @@ class _UdpController with WidgetsBindingObserver {
       _Haptics.tripleBurst(a1: a1, s1: 0.85, a2: a2, s2: 0.60, a3: a3, s3: 0.45, gap1Ms: 30, gap2Ms: 22);
       _lastImpactMs = now2;
     }
+  }
+
+  void _driveLegacyEq(int now, double L, double R) {
+    final aIntRaw = fbAudInt.clamp(0.0, 1.0);
+    final aHzRaw = fbAudHz.clamp(6.0, 240.0);
+    const onThresh = 0.03;
+    if (aIntRaw > onThresh) {
+      const k = 0.25; // EMA factor
+      _eqSmoothHz = (_eqSmoothHz == 0.0)
+          ? aHzRaw
+          : (k * aHzRaw + (1 - k) * _eqSmoothHz);
+      _eqSmoothInt = (_eqSmoothInt == 0.0)
+          ? aIntRaw
+          : (k * aIntRaw + (1 - k) * _eqSmoothInt);
+
+      if (_eqLastMs == 0) {
+        _eqLastMs = now;
+        _eqActive = true;
+        _Haptics.stopContinuous();
+      }
+
+      final dt = (_eqLastMs == 0) ? 0.0 : (now - _eqLastMs) / 1000.0;
+      _eqLastMs = now;
+
+      final effHz = _eqSmoothHz.clamp(6.0, 48.0);
+      _eqPhase += effHz * dt;
+
+      int emit = _eqPhase.floor();
+      if (emit > 3) emit = 3;
+      _eqPhase -= emit;
+
+      if (emit > 0) {
+        final powI = math.pow(_eqSmoothInt, 0.90).toDouble();
+        final baseIntensity = (0.10 + 0.82 * powI).clamp(0.10, 1.00);
+        final balance = (R - L).clamp(-1.0, 1.0);
+        final sharp = (0.40 + 0.20 * balance.abs()).clamp(0.30, 0.85);
+
+        for (int i = 0; i < emit; i++) {
+          final jitter = 0.04 * (0.5 - math.Random(now + i).nextDouble());
+          final intensity = (baseIntensity + jitter).clamp(0.10, 1.00);
+          _Haptics.tick(strength: intensity, sharpness: sharp, maxHz: 60);
+        }
+
+        if (now - _lastEqLogMs > 250) {
+          debugPrint('[EQ] hz=${effHz.toStringAsFixed(1)} int=${baseIntensity.toStringAsFixed(2)} emit=$emit phase=${_eqPhase.toStringAsFixed(2)}');
+          _lastEqLogMs = now;
+        }
+      }
+    } else {
+      if (_eqActive) {
+        if (now - _lastEqLogMs > 500) {
+          debugPrint('[EQ] below threshold audInt=${aIntRaw.toStringAsFixed(2)} (pause)');
+          _lastEqLogMs = now;
+        }
+      }
+      _eqActive = false;
+      _eqLastMs = now;
+    }
+
+    if (_eqLow.active || _eqHigh.active) {
+      _eqLow.reset();
+      _eqHigh.reset();
+    }
+  }
+
+  void _driveSplitEq(int now, double L, double R) {
+    if (_eqActive || _eqPhase != 0.0 || _eqSmoothInt != 0.0 || _eqSmoothHz != 0.0) {
+      _eqActive = false;
+      _eqPhase = 0.0;
+      _eqSmoothHz = 0.0;
+      _eqSmoothInt = 0.0;
+      _eqLastMs = 0;
+    }
+
+    final double lowHz = fbAudLowHz > 0.0
+        ? fbAudLowHz
+        : fbAudHz.clamp(4.0, 28.0).toDouble();
+    final double highHz = fbAudHighHz > 0.0
+        ? fbAudHighHz
+        : fbAudHz.clamp(14.0, 64.0).toDouble();
+
+    _driveEqBand(
+      state: _eqLow,
+      rawIntensity: fbAudLowInt,
+      rawHz: lowHz,
+      now: now,
+      left: L,
+      right: R,
+      highBand: false,
+    );
+    _driveEqBand(
+      state: _eqHigh,
+      rawIntensity: fbAudHighInt,
+      rawHz: highHz,
+      now: now,
+      left: L,
+      right: R,
+      highBand: true,
+    );
+  }
+
+  bool _driveEqBand({
+    required _EqBandState state,
+    required double rawIntensity,
+    required double rawHz,
+    required int now,
+    required double left,
+    required double right,
+    required bool highBand,
+  }) {
+    rawIntensity = rawIntensity.clamp(0.0, 1.0);
+    if (!rawHz.isFinite) rawHz = 0.0;
+
+    final double floorAlpha = highBand ? 0.16 : 0.08;
+    final double keep = 1.0 - floorAlpha;
+    state.floor = (state.floor == 0.0)
+        ? rawIntensity
+        : (keep * state.floor + floorAlpha * rawIntensity);
+
+    final double delta = rawIntensity - state.floor;
+    final double gate = highBand
+        ? 0.03
+        : (0.05 + 0.45 * state.floor).clamp(0.05, 0.18).toDouble();
+    final bool aboveAbs = rawIntensity > gate;
+    final bool aboveDelta = delta > (highBand ? gate * 0.6 : gate);
+
+    if ((!aboveAbs && !aboveDelta) || rawHz <= 0.0) {
+      if (state.active) {
+        state.active = false;
+        state.phase = 0.0;
+        state.lastMs = 0;
+        state.smoothHz = 0.0;
+        state.smoothInt = 0.0;
+      } else {
+        state.lastMs = 0;
+      }
+      return false;
+    }
+
+    if (!state.active) {
+      state.active = true;
+      state.phase = 0.0;
+      state.smoothHz = 0.0;
+      state.smoothInt = 0.0;
+      state.lastMs = 0;
+      _Haptics.stopContinuous();
+    }
+
+    final double minHz = highBand ? 16.0 : 5.0;
+    final double maxHz = highBand ? 72.0 : 26.0;
+    final double targetHz = rawHz.clamp(minHz, maxHz).toDouble();
+    final double hzK = highBand ? 0.35 : 0.22;
+    final double intK = highBand ? 0.32 : 0.24;
+    state.smoothHz = (state.smoothHz == 0.0)
+        ? targetHz
+        : (hzK * targetHz + (1 - hzK) * state.smoothHz);
+    state.smoothInt = (state.smoothInt == 0.0)
+        ? rawIntensity
+        : (intK * rawIntensity + (1 - intK) * state.smoothInt);
+
+    if (state.lastMs == 0) {
+      state.lastMs = now;
+      return true;
+    }
+
+    final double dt = (now - state.lastMs) / 1000.0;
+    state.lastMs = now;
+    state.phase += state.smoothHz * dt;
+
+    int emit = state.phase.floor();
+    if (emit > 4) emit = 4;
+    state.phase -= emit;
+
+    if (emit <= 0) {
+      return true;
+    }
+
+    final double powI = math.pow(state.smoothInt.clamp(0.0, 1.0),
+            highBand ? 0.74 : 0.90)
+        .toDouble();
+    final double baseIntensity = highBand
+        ? (0.12 + 0.85 * powI).clamp(0.12, 1.00).toDouble()
+        : (0.20 + 0.70 * powI).clamp(0.18, 0.92).toDouble();
+    final double balance = (right - left).clamp(-1.0, 1.0);
+    final double sharp = highBand
+        ? (0.50 + 0.38 * powI + 0.15 * balance.abs())
+            .clamp(0.45, 0.95)
+            .toDouble()
+        : (0.28 + 0.30 * powI + 0.20 * balance.abs())
+            .clamp(0.26, 0.82)
+            .toDouble();
+    final double jitterScale = highBand ? 0.05 : 0.03;
+    final double maxRate = highBand
+        ? state.smoothHz.clamp(12.0, 60.0).toDouble()
+        : state.smoothHz.clamp(4.0, 28.0).toDouble();
+
+    for (int i = 0; i < emit; i++) {
+      final jitterRand = math.Random(now + state.seedOffset + i);
+      final double jitter = jitterScale * (0.5 - jitterRand.nextDouble());
+      final double strength = (baseIntensity + jitter)
+          .clamp(highBand ? 0.10 : 0.16, 1.00)
+          .toDouble();
+      if (highBand) {
+        _Haptics.tick(strength: strength, sharpness: sharp, maxHz: maxRate);
+      } else {
+        _Haptics.bedTick(
+          strength: strength,
+          sharpness: sharp,
+          maxHz: maxRate,
+        );
+      }
+    }
+
+    if (now - state.lastLogMs > 280) {
+      debugPrint('[EQ-${state.label}] hz=${state.smoothHz.toStringAsFixed(1)} int=${state.smoothInt.toStringAsFixed(2)} emit=$emit delta=${delta.toStringAsFixed(2)}');
+      state.lastLogMs = now;
+    }
+
+    return true;
   }
 
   // Steering position → periodic transient ticks on iOS.

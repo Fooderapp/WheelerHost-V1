@@ -537,8 +537,8 @@ class UDPServer(QtCore.QObject):
                 # Real FFB if fresh (<300ms), else (optionally) synthesize from telemetry
                 # Defaults for audio equalizer metrics
                 audInt = 0.0; audHz = 0.0
-                audLoInt = 0.0; audLoHz = 80.0
-                audHiInt = 0.0; audHiHz = 230.0
+                audLoInt = 0.0; audLoHz = 0.0
+                audHiInt = 0.0; audHiHz = 0.0
                 if now_ms - self._ffb_ms <= 300:
                     # Fresh real FFB from game
                     rumbleL = float(self._ffbL)
@@ -555,13 +555,17 @@ class UDPServer(QtCore.QObject):
                             road_b = float(max(0.0, min(1.0, feat_b.get("road", 0.0))))
                             tact_b = float(max(0.0, min(1.0, feat_b.get("tactile", 0.0))))
                             tact_hz = float(feat_b.get("tactHz", 0.0) or 0.0)
-                            # Equalizer metrics for phone overlay and mobile haptics
-                            if tact_b > 0.0 and 60.0 <= tact_hz <= 280.0:
-                                audInt = max(0.0, min(1.0, self._aud_intensity * tact_b))
-                                audHz  = float(max(80.0, min(230.0, tact_hz)))
-                            else:
-                                audInt = max(0.0, min(1.0, self._aud_intensity * (0.6*road_b + 0.4*imp_b)))
-                                audHz  = float(80.0 + 150.0 * (eng_b ** 0.85))
+                            skid_b = float(max(0.0, min(1.0, feat_b.get("skid", 0.0))))
+                            audInt, audHz, audLoInt, audLoHz, audHiInt, audHiHz = (
+                                self._compute_audio_bands(
+                                    road=road_b,
+                                    impact=imp_b,
+                                    tactile=tact_b,
+                                    tactile_hz=tact_hz,
+                                    engine=eng_b,
+                                    skid=skid_b,
+                                )
+                            )
                             if imp_b > 0.08:
                                 boost = min(0.25, 0.20 * self._aud_intensity) * imp_b
                                 rumbleL = max(0.0, min(1.0, rumbleL + boost))
@@ -652,12 +656,17 @@ class UDPServer(QtCore.QObject):
                                     rumbleL = 0.0
                                     rumbleR = 0.0
                             # Equalizer metrics for phone overlay and mobile haptics
-                            if tact > 0.0 and 60.0 <= tactHz <= 280.0:
-                                audInt = max(0.0, min(1.0, self._aud_intensity * tact))
-                                audHz  = float(max(80.0, min(230.0, tactHz)))
-                            else:
-                                audInt = max(0.0, min(1.0, self._aud_intensity * (0.6*road_est + 0.4*imp)))
-                                audHz  = float(80.0 + 150.0 * (eng_val ** 0.85))
+                            skid_b = float(max(0.0, min(1.0, feat.get("skid", 0.0))))
+                            audInt, audHz, audLoInt, audLoHz, audHiInt, audHiHz = (
+                                self._compute_audio_bands(
+                                    road=road_est,
+                                    impact=imp,
+                                    tactile=tact,
+                                    tactile_hz=tactHz,
+                                    engine=eng_val,
+                                    skid=skid_b,
+                                )
+                            )
                             src = "audio"
                             # Occasional log for audio rumble to aid debugging
                             if now_ms - self._audio_last_log_ms > 800:
@@ -714,6 +723,10 @@ class UDPServer(QtCore.QObject):
                     "trigR": trigR_out,
                     "audInt": audInt,
                     "audHz": audHz,
+                    "audLowInt": audLoInt,
+                    "audLowHz": audLoHz,
+                    "audHighInt": audHiInt,
+                    "audHighHz": audHiHz,
                     "center": max(-1.0, min(1.0, -x_proc)),
                     "centerDeg": 0.0,
                     "resistance": 1.0,
@@ -758,6 +771,77 @@ class UDPServer(QtCore.QObject):
             try: self._audio.set_params(engine_gain=float(v))
             except Exception: pass
             LOG.log(f"🎚️ Audio engine gain = {v:.2f}")
+
+    # ----- audio equalizer helpers -----
+    def _compute_audio_bands(
+        self,
+        *,
+        road: float = 0.0,
+        impact: float = 0.0,
+        tactile: float = 0.0,
+        tactile_hz: float = 0.0,
+        engine: float = 0.0,
+        skid: float = 0.0,
+    ) -> Tuple[float, float, float, float, float, float]:
+        def clamp01(v: float) -> float:
+            try:
+                v = float(v)
+            except Exception:
+                v = 0.0
+            if v < 0.0:
+                return 0.0
+            if v > 1.0:
+                return 1.0
+            return v
+
+        road = clamp01(road)
+        impact = clamp01(impact)
+        tactile = clamp01(tactile)
+        engine = clamp01(engine)
+        skid = clamp01(skid)
+        tactile_hz = float(tactile_hz or 0.0)
+
+        # Low band: road texture + impacts, suppress sustained engine hum.
+        low_src = max(road, 0.55 * impact)
+        if engine > 0.12:
+            low_src = max(0.0, low_src - 0.35 * engine)
+        low_int = clamp01(self._aud_intensity * low_src)
+        low_hz = 18.0 + 26.0 * pow(max(0.0, min(1.0, low_src)), 0.55)
+        if low_int <= 0.01:
+            low_hz = 0.0
+        else:
+            low_hz = float(max(12.0, min(42.0, low_hz)))
+
+        # High band: skids / sharp vibration (tactile), allow light engine carry-over.
+        high_src = max(tactile, 0.45 * impact, 0.65 * skid)
+        if high_src <= 0.05 and engine > 0.35:
+            high_src = max(high_src, 0.30 * engine)
+        high_int = clamp01(self._aud_intensity * high_src)
+        if 50.0 <= tactile_hz <= 320.0:
+            high_hz = float(max(45.0, min(220.0, tactile_hz)))
+        else:
+            high_hz = float(110.0 + 90.0 * pow(max(engine, skid), 0.70))
+        if high_int <= 0.015:
+            high_hz = 0.0
+        else:
+            high_hz = float(max(45.0, min(220.0, high_hz)))
+
+        combined = max(low_int, high_int)
+        if combined <= 0.01:
+            aud_int = 0.0
+            aud_hz = 0.0
+        else:
+            aud_int = combined
+            if high_int > low_int * 1.25 and high_hz > 0.0:
+                aud_hz = high_hz
+            elif low_int > high_int * 1.25 and low_hz > 0.0:
+                aud_hz = low_hz
+            elif high_hz > 0.0 and low_hz > 0.0:
+                aud_hz = float(0.58 * high_hz + 0.42 * low_hz)
+            else:
+                aud_hz = high_hz if high_hz > 0.0 else low_hz
+
+        return aud_int, aud_hz, low_int, low_hz, high_int, high_hz
 
     @QtCore.Slot(float)
     def set_audio_impact_gain(self, v: float):
