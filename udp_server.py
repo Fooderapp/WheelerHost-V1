@@ -801,32 +801,36 @@ class UDPServer(QtCore.QObject):
         skid = clamp01(skid)
         tactile_hz = float(tactile_hz or 0.0)
 
-        # Low band: road texture + impacts, suppress sustained engine hum.
-        low_src = max(road, 0.55 * impact)
-        if engine > 0.12:
-            low_src = max(0.0, low_src - 0.35 * engine)
+        # Low band: emphasize road texture + impact thumps, aggressively suppress engine hum.
+        low_core = max(road * 0.90, impact * 0.75)
+        if engine > 0.18:
+            low_core = max(0.0, low_core - 0.55 * (engine - 0.18))
+        low_src = max(low_core, impact * 0.55)
         low_int = clamp01(self._aud_intensity * low_src)
-        low_hz = 18.0 + 26.0 * pow(max(0.0, min(1.0, low_src)), 0.55)
+        low_hz = 16.0 + 30.0 * pow(max(0.0, min(1.0, low_src)), 0.6)
         if low_int <= 0.01:
             low_hz = 0.0
         else:
-            low_hz = float(max(12.0, min(42.0, low_hz)))
+            low_hz = float(max(12.0, min(46.0, low_hz)))
 
         # High band: skids / sharp vibration (tactile), allow light engine carry-over.
-        high_src = max(tactile, 0.45 * impact, 0.65 * skid)
-        if high_src <= 0.05 and engine > 0.35:
-            high_src = max(high_src, 0.30 * engine)
+        high_core = max(tactile, 0.70 * impact, 0.65 * skid)
+        if high_core <= 0.05 and engine > 0.35:
+            high_core = max(high_core, 0.25 * engine)
+        high_src = max(high_core, impact * 0.60)
         high_int = clamp01(self._aud_intensity * high_src)
+        if impact > 0.22:
+            high_int = max(high_int, clamp01(self._aud_intensity * (0.35 + 0.65 * impact)))
         if 50.0 <= tactile_hz <= 320.0:
             high_hz = float(max(45.0, min(220.0, tactile_hz)))
         else:
-            high_hz = float(110.0 + 90.0 * pow(max(engine, skid), 0.70))
+            high_hz = float(120.0 + 110.0 * pow(max(engine, skid), 0.65))
         if high_int <= 0.015:
             high_hz = 0.0
         else:
             high_hz = float(max(45.0, min(220.0, high_hz)))
 
-        combined = max(low_int, high_int)
+        combined = max(low_int, high_int, clamp01(self._aud_intensity * impact))
         if combined <= 0.01:
             aud_int = 0.0
             aud_hz = 0.0
