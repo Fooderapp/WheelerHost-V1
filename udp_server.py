@@ -64,6 +64,7 @@ class Logger(QtCore.QObject):
         print(line, flush=True)
         self.line.emit(line + "\n")
 LOG = Logger()
+HOST_VERSION = 7  # increment when host behavior changes
 
 # ---------- Settings ----------
 class Settings(QtCore.QObject):
@@ -158,6 +159,13 @@ class UDPServer(QtCore.QObject):
         # Audio pulse scheduler (convert energy to short pulses at variable Hz)
         self._aud_pulse_next_ms = 0
         self._aud_pulse_w_ms = 22
+        # Dual-band pulse schedulers (low ~engine, high ~road)
+        self._aud_lo_next_ms = 0
+        self._aud_lo_w_ms = 20
+        self._aud_hi_next_ms = 0
+        self._aud_hi_w_ms = 18
+        # Overall intensity
+        self._aud_intensity = 1.0
 
         # Log available audio devices at startup (Windows loopback most relevant)
         try:
@@ -309,7 +317,7 @@ class UDPServer(QtCore.QObject):
         if self._th and self._th.is_alive(): return
         self._stop.clear()
         self._th = threading.Thread(target=self._run, daemon=True); self._th.start()
-        LOG.log(f"🟢 UDP server ready on :{self.port} ({self._bridge_name})")
+        LOG.log(f"🟢 UDP server ready on :{self.port} ({self._bridge_name}) v{HOST_VERSION}")
 
     def stop(self):
         self._stop.set()
@@ -527,11 +535,39 @@ class UDPServer(QtCore.QObject):
                         self._last_dbg_ms = now_ms
 
                 # Real FFB if fresh (<300ms), else (optionally) synthesize from telemetry
+                # Defaults for audio equalizer metrics
+                audInt = 0.0; audHz = 0.0
+                audLoInt = 0.0; audLoHz = 80.0
+                audHiInt = 0.0; audHiHz = 230.0
                 if now_ms - self._ffb_ms <= 300:
                     # Fresh real FFB from game
                     rumbleL = float(self._ffbL)
                     rumbleR = float(self._ffbR)
                     src = "real"
+                    # Light blend-in of audio impact if available (kept subtle)
+                    try:
+                        helper_ok = (self._audio_helper is not None)
+                        probe_ok = (self._audio is not None)
+                        if (helper_ok or probe_ok) and not self._ffb_passthrough_only:
+                            feat_b = (self._audio_helper.get() if helper_ok else self._audio.get())
+                            imp_b = float(max(0.0, min(1.0, feat_b.get("impact", 0.0))))
+                            eng_b = float(max(0.0, min(1.0, feat_b.get("engine", 0.0))))
+                            road_b = float(max(0.0, min(1.0, feat_b.get("road", 0.0))))
+                            tact_b = float(max(0.0, min(1.0, feat_b.get("tactile", 0.0))))
+                            tact_hz = float(feat_b.get("tactHz", 0.0) or 0.0)
+                            # Equalizer metrics for phone overlay and mobile haptics
+                            if tact_b > 0.0 and 60.0 <= tact_hz <= 280.0:
+                                audInt = max(0.0, min(1.0, self._aud_intensity * tact_b))
+                                audHz  = float(max(80.0, min(230.0, tact_hz)))
+                            else:
+                                audInt = max(0.0, min(1.0, self._aud_intensity * (0.6*road_b + 0.4*imp_b)))
+                                audHz  = float(80.0 + 150.0 * (eng_b ** 0.85))
+                            if imp_b > 0.08:
+                                boost = min(0.25, 0.20 * self._aud_intensity) * imp_b
+                                rumbleL = max(0.0, min(1.0, rumbleL + boost))
+                                rumbleR = max(0.0, min(1.0, rumbleR + boost))
+                    except Exception:
+                        pass
                     # No bed/mask/hybrid modifications — pass as-is
                 else:
                     # No fresh real FFB
@@ -549,15 +585,16 @@ class UDPServer(QtCore.QObject):
                             bodyL = float(max(0.0, min(1.0, feat.get("bodyL", 0.0))))
                             bodyR = float(max(0.0, min(1.0, feat.get("bodyR", 0.0))))
                             imp   = float(max(0.0, min(1.0, feat.get("impact", 0.0))))
+                            tact  = float(max(0.0, min(1.0, feat.get("tactile", 0.0))))
+                            tactHz= float(feat.get("tactHz", 0.0) or 0.0)
                             # pre-rumble from features
                             rL0 = max(bodyL, 0.35 * imp)
                             rR0 = max(bodyR, 0.45 * imp)
                             energy = max(rL0, rR0)
                             eng_val = float(max(0.0, min(1.0, feat.get("engine", energy))))
-                            # Estimate road dominance (if no explicit 'road' field)
                             road_est = float(max(0.0, min(1.0, feat.get("road", max(bodyL, bodyR) - 0.5*eng_val))))
+                            # Engine as background: reduce amplitude when engine dominates strongly
                             if eng_val > road_est + 0.12:
-                                # Engine dominant → soften base amplitude to keep engine as subtle background
                                 k = max(0.25, 0.35 + 0.40 * road_est)  # 0.35..0.75
                                 rL0 *= k; rR0 *= k
                             # Gate/hysteresis
@@ -578,28 +615,49 @@ class UDPServer(QtCore.QObject):
                                     self._aud_gate_on = False
                                     rumbleL, rumbleR = 0.0, 0.0
                                 else:
-                                    # Convert engine band into short pulses at variable Hz (avoid long continuous bed)
-                                    e = eng_val
-                                    hz = 8.0 + 28.0 * (e ** 0.85)  # ~8..36 Hz following engine
-                                    period_ms = int(max(30.0, min(220.0, 1000.0 / hz)))
-                                    self._aud_pulse_w_ms = int(18 + 16 * e)  # 18..34 ms width
-                                    if self._aud_pulse_next_ms <= 0:
-                                        self._aud_pulse_next_ms = now_ms
-                                    # advance schedule to current time window
-                                    while now_ms - self._aud_pulse_next_ms > period_ms:
-                                        self._aud_pulse_next_ms += period_ms
-                                    # add small deterministic jitter to avoid machine-gun feel
-                                    jitter = int(0.10 * period_ms)
-                                    if jitter > 0:
-                                        jseed = (now_ms // 33) % 7  # 0..6
-                                        joff = (int(jseed) - 3) * (jitter // 3)
-                                        win_start = self._aud_pulse_next_ms + joff
-                                    else:
-                                        win_start = self._aud_pulse_next_ms
-                                    if (now_ms - win_start) <= self._aud_pulse_w_ms:
-                                        rumbleL, rumbleR = rL0, rR0
-                                    else:
-                                        rumbleL, rumbleR = 0.0, 0.0
+                                    # Dual-band pulses: low (engine) and high (road)
+                                    e_lo = eng_val
+                                    e_hi = road_est
+                                    hz_lo = 6.0 + 12.0 * (e_lo ** 0.85)   # ~6..18 Hz
+                                    hz_hi = 14.0 + 18.0 * (e_hi ** 0.85)  # ~14..32 Hz
+                                    per_lo = int(max(40.0, min(250.0, 1000.0 / hz_lo)))
+                                    per_hi = int(max(30.0, min(200.0, 1000.0 / hz_hi)))
+                                    self._aud_lo_w_ms = int(18 + 10 * e_lo)
+                                    self._aud_hi_w_ms = int(16 + 10 * e_hi)
+                                    # schedule windows with jitter
+                                    def in_win(t0, per, wid):
+                                        t = t0
+                                        while now_ms - t > per:
+                                            t += per
+                                        jitter = int(0.10 * per)
+                                        if jitter > 0:
+                                            jseed = (now_ms // 41) % 9
+                                            joff = (int(jseed) - 4) * (jitter // 3)
+                                            t += joff
+                                        return (now_ms - t) <= wid
+                                    if self._aud_lo_next_ms <= 0:
+                                        self._aud_lo_next_ms = now_ms
+                                    if self._aud_hi_next_ms <= 0:
+                                        self._aud_hi_next_ms = now_ms
+                                    on_lo = in_win(self._aud_lo_next_ms, per_lo, self._aud_lo_w_ms)
+                                    on_hi = in_win(self._aud_hi_next_ms, per_hi, self._aud_hi_w_ms)
+                                    ampL = 0.0; ampR = 0.0
+                                    if on_lo:
+                                        ampL = max(ampL, rL0 * (0.50 + 0.50 * e_lo))
+                                        ampR = max(ampR, rR0 * (0.50 + 0.50 * e_lo))
+                                    if on_hi:
+                                        ampL = max(ampL, rL0 * (0.60 + 0.40 * e_hi))
+                                        ampR = max(ampR, rR0 * (0.60 + 0.40 * e_hi))
+                                    # Do not forward audio pulses as L/R rumble; phone uses audInt/audHz for impulses
+                                    rumbleL = 0.0
+                                    rumbleR = 0.0
+                            # Equalizer metrics for phone overlay and mobile haptics
+                            if tact > 0.0 and 60.0 <= tactHz <= 280.0:
+                                audInt = max(0.0, min(1.0, self._aud_intensity * tact))
+                                audHz  = float(max(80.0, min(230.0, tactHz)))
+                            else:
+                                audInt = max(0.0, min(1.0, self._aud_intensity * (0.6*road_est + 0.4*imp)))
+                                audHz  = float(80.0 + 150.0 * (eng_val ** 0.85))
                             src = "audio"
                             # Occasional log for audio rumble to aid debugging
                             if now_ms - self._audio_last_log_ms > 800:
@@ -654,6 +712,8 @@ class UDPServer(QtCore.QObject):
                     "impact": impact,
                     "trigL": trigL_out,
                     "trigR": trigR_out,
+                    "audInt": audInt,
+                    "audHz": audHz,
                     "center": max(-1.0, min(1.0, -x_proc)),
                     "centerDeg": 0.0,
                     "resistance": 1.0,
@@ -757,6 +817,14 @@ class UDPServer(QtCore.QObject):
     def set_audio_gate_hold(self, ms: int):
         self._aud_max_burst_ms = max(0, int(ms))
         LOG.log(f"🎚️ Audio gate hold = {self._aud_max_burst_ms} ms")
+
+    @QtCore.Slot(float)
+    def set_audio_intensity(self, v: float):
+        try:
+            self._aud_intensity = max(0.0, min(2.0, float(v)))
+            LOG.log(f"🎚️ Audio intensity = {self._aud_intensity:.2f}")
+        except Exception:
+            pass
 
     def _init_bridge(self):
         """Select and initialize input bridge with comprehensive platform support."""

@@ -61,7 +61,7 @@ class AudioProbe:
         self._bs = int(blocksize)
         self._device = device if (isinstance(device, int) and device >= 0) else None
         self._lock = threading.Lock()
-        self._features: Dict[str, float] = {"bodyL":0.0, "bodyR":0.0, "impact":0.0, "engine":0.0, "road":0.0}
+        self._features: Dict[str, float] = {"bodyL":0.0, "bodyR":0.0, "impact":0.0, "engine":0.0, "road":0.0, "tactile":0.0, "tactHz":120.0}
         # Tunables (thread-safe via _lock). Defaults aimed for general content.
         self._params = {
             "road_gain": 1.0,
@@ -71,6 +71,8 @@ class AudioProbe:
             "road_norm": 0.020,
             "eng_norm":  0.015,
             "imp_norm":  0.010,
+            # Tactile band normalization (80–230 Hz)
+            "tact_norm": 0.018,
             # Music suppression: 0=off, 1=strong
             "music_suppress": 0.6,
             # Suppress when flatness < thresh and flux < gate
@@ -81,6 +83,8 @@ class AudioProbe:
         self._flux_env = 0.0
         self._road_env = 0.0
         self._eng_env = 0.0
+        self._tact_env = 0.0
+        self._tact_hz = 120.0
         self._last_t = time.time()
         self._stream = None
 
@@ -142,7 +146,7 @@ class AudioProbe:
                 m = mag[(freqs>=a) & (freqs<=b)]
                 return m
 
-            # Spectral flux in 80–250Hz
+            # Spectral flux in ~tactile band (80–250Hz)
             m_band = mag[(freqs>=80) & (freqs<=250)]
             flux = 0.0
             if self._prev_mag is not None and len(self._prev_mag)==len(mag):
@@ -154,9 +158,25 @@ class AudioProbe:
             road_band = mag[(freqs>=150) & (freqs<=800)]
             road = float(np.mean(road_band)) if road_band.size else 0.0
 
-            # Engine low band 50–200Hz
+            # Engine low band ~50–200Hz
             eng_band = mag[(freqs>=50) & (freqs<=200)]
             eng = float(np.mean(eng_band)) if eng_band.size else 0.0
+
+            # Tactile sweet-spot band 80–230Hz (projects audio to feelable range)
+            tact_mask = (freqs>=80) & (freqs<=230)
+            tact_band = mag[tact_mask]
+            if tact_band.size:
+                tact = float(np.mean(tact_band))
+                # Energy-weighted center frequency for smooth dominant Hz
+                fband = freqs[tact_mask]
+                w = tact_band
+                s = float(np.sum(w))
+                f_c = float(np.sum(fband * w) / max(s, 1e-9)) if s > 1e-9 else self._tact_hz
+                # Clamp to band just in case
+                f_c = float(np.clip(f_c, 80.0, 230.0))
+            else:
+                tact = 0.0
+                f_c = self._tact_hz
 
             # Music suppression heuristics
             # Tonalness via spectral flatness in 200–900Hz
@@ -178,6 +198,8 @@ class AudioProbe:
             self._flux_env = smooth(self._flux_env, flux, 0.005, 0.060)
             self._road_env = smooth(self._road_env, road, 0.008, 0.050)
             self._eng_env  = smooth(self._eng_env,  eng,  0.040, 0.150)
+            self._tact_env = smooth(self._tact_env, tact, 0.010, 0.060)
+            self._tact_hz  = smooth(self._tact_hz,  f_c,  0.025, 0.080)
 
             # Gate down when likely music (flatness low and flux low)
             with self._lock:
@@ -197,12 +219,17 @@ class AudioProbe:
             imp = nz(self._flux_env * suppress, P["imp_norm"]) * P["impact_gain"]
             road_o = nz(self._road_env * suppress, P["road_norm"]) * P["road_gain"]
             eng_o  = nz(self._eng_env,  P["eng_norm"]) * P["engine_gain"]
+            tactile_o = nz(self._tact_env * suppress, P["tact_norm"])  # base tactile intensity
 
             bodyR = max(road_o, eng_o * 0.5)
             bodyL = max(road_o*0.8, eng_o * 0.3)
 
             with self._lock:
-                self._features = {"bodyL": bodyL, "bodyR": bodyR, "impact": imp, "engine": eng_o, "road": road_o}
+                self._features = {
+                    "bodyL": bodyL, "bodyR": bodyR, "impact": imp,
+                    "engine": eng_o, "road": road_o,
+                    "tactile": tactile_o, "tactHz": float(np.clip(self._tact_hz, 80.0, 230.0)),
+                }
         except Exception:
             pass
 

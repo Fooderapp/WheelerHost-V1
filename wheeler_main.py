@@ -210,6 +210,7 @@ class MainWindow(QtWidgets.QWidget):
         self.sldEng  = QtWidgets.QSlider(Qt.Horizontal); self.sldEng.setRange(0, 200);  self.sldEng.setValue(100)
         self.sldImp  = QtWidgets.QSlider(Qt.Horizontal); self.sldImp.setRange(0, 200);  self.sldImp.setValue(100)
         self.sldMusic = QtWidgets.QSlider(Qt.Horizontal); self.sldMusic.setRange(0, 100); self.sldMusic.setValue(60)
+        self.sldIntensity = QtWidgets.QSlider(Qt.Horizontal); self.sldIntensity.setRange(0, 200); self.sldIntensity.setValue(100)
         # Gate thresholds + hold
         self.sldGateOn  = QtWidgets.QSlider(Qt.Horizontal); self.sldGateOn.setRange(0, 50);  self.sldGateOn.setValue(12)
         self.sldGateOff = QtWidgets.QSlider(Qt.Horizontal); self.sldGateOff.setRange(0, 50); self.sldGateOff.setValue(5)
@@ -221,6 +222,7 @@ class MainWindow(QtWidgets.QWidget):
         ga.addWidget(QtWidgets.QLabel("Gate ON thr"), 5, 0); ga.addWidget(self.sldGateOn,  5, 1)
         ga.addWidget(QtWidgets.QLabel("Gate OFF thr"),6, 0); ga.addWidget(self.sldGateOff, 6, 1)
         ga.addWidget(QtWidgets.QLabel("Gate hold (ms)"),7, 0); ga.addWidget(self.sldGateHold, 7, 1)
+        ga.addWidget(QtWidgets.QLabel("Intensity"),     8, 0); ga.addWidget(self.sldIntensity, 8, 1)
         rightCol.addWidget(boxAudio)
 
         labClients = QtWidgets.QLabel("Client"); rightCol.addWidget(labClients)
@@ -264,6 +266,7 @@ class MainWindow(QtWidgets.QWidget):
         self.sldGateOn.valueChanged.connect(lambda v: self.server.set_audio_gate_on(v/100.0))
         self.sldGateOff.valueChanged.connect(lambda v: self.server.set_audio_gate_off(v/100.0))
         self.sldGateHold.valueChanged.connect(lambda v: self.server.set_audio_gate_hold(int(v)))
+        self.sldIntensity.valueChanged.connect(lambda v: self.server.set_audio_intensity(v/100.0))
         # Reflect audio helper/probe status
         try:
             self.server.audio_status_changed.connect(lambda s: self.lblAudioStatus.setText(f"Audio: {s}"))

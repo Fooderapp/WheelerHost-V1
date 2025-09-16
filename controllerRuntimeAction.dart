@@ -375,6 +375,16 @@ class _UdpController with WidgetsBindingObserver {
   double fbTrigL = 0.0; // ABS gate [0..1]
   double fbTrigR = 0.0; // Slip gate [0..1]
   double fbImpact = 0.0; // Impact strength [0..1]
+  // Audio equalizer feedback (from host)
+  double fbAudInt = 0.0; // 0..1 overall audio intensity
+  double fbAudHz = 0.0;  // target feel rate (approx 80..230 Hz)
+  int _lastEqLogMs = 0;  // throttle equalizer debug logs
+  // Audio equalizer scheduler state (phase-accurate tick timing)
+  double _eqPhase = 0.0; // cycles [0..1)
+  int _eqLastMs = 0;     // last integration timestamp
+  double _eqSmoothHz = 0.0; // smoothed effective Hz
+  double _eqSmoothInt = 0.0; // smoothed intensity
+  bool _eqActive = false; // whether EQ driver is actively pulsing
   // Local rate limiters for expanded channels
   int _lastAbsTickMs = 0;
   int _lastSlipTickMs = 0;
@@ -489,7 +499,20 @@ class _UdpController with WidgetsBindingObserver {
             if (trigL != null) fbTrigL = trigL.clamp(0.0, 1.0);
             if (trigR != null) fbTrigR = trigR.clamp(0.0, 1.0);
             if (impact != null) fbImpact = impact.clamp(0.0, 1.0);
+            // Audio equalizer
+            final aInt = (obj['audInt'] as num?)?.toDouble();
+            if (aInt != null) fbAudInt = aInt.clamp(0.0, 1.0);
+            final aHz = (obj['audHz'] as num?)?.toDouble();
+            if (aHz != null) fbAudHz = aHz.clamp(6.0, 240.0);
             fbLastRxMs = DateTime.now().millisecondsSinceEpoch;
+            // Debug: log received EQ values occasionally
+            final nowDbg = fbLastRxMs;
+            if (nowDbg - _lastEqLogMs > 500) {
+              // ignore excessive spam
+              debugPrint(
+                  '[EQ] rx audInt=${fbAudInt.toStringAsFixed(2)} audHz=${fbAudHz.toStringAsFixed(1)} rumbleL=${fbRumbleL.toStringAsFixed(2)} rumbleR=${fbRumbleR.toStringAsFixed(2)}');
+              _lastEqLogMs = nowDbg;
+            }
 
             // EMAs
             _emaL = _emaA * fbRumbleL + (1 - _emaA) * _emaL;
@@ -576,6 +599,12 @@ class _UdpController with WidgetsBindingObserver {
 
     fbRumbleL = fbRumbleR = 0.0;
     fbLastRxMs = 0;
+    // Reset EQ scheduler
+    _eqPhase = 0.0;
+    _eqLastMs = 0;
+    _eqSmoothHz = 0.0;
+    _eqSmoothInt = 0.0;
+    _eqActive = false;
 
     _seq = 0;
     _lastSendMs = 0;
@@ -694,34 +723,86 @@ class _UdpController with WidgetsBindingObserver {
     _maybeSendNow();
   }
 
-  // Game FFB → phone haptics (bed pulses + spike pairs)
+  // Game FFB → phone haptics (audio equalizer impulses + spike pairs)
   void _driveHaptics() {
-    // Game FFB mapping (rumble → ticks)
     final now = DateTime.now().millisecondsSinceEpoch;
     if (fbLastRxMs == 0 || (now - fbLastRxMs) > 500) {
       _Haptics.stopContinuous();
+      // Drop EQ state when feed is stale
+      _eqActive = false;
+      _eqLastMs = 0;
       return;
     }
 
-    double L = fbRumbleL.clamp(0.0, 1.0);
-    double R = fbRumbleR.clamp(0.0, 1.0);
+    final L = fbRumbleL.clamp(0.0, 1.0);
+    final R = fbRumbleR.clamp(0.0, 1.0);
 
-    // Pseudo-"bed" using transient ticks instead of continuous player.
-    // This avoids CoreHaptics continuous issues on some devices/OS.
-    final energy = (0.6 * L + 0.8 * R).clamp(0.0, 1.0);
-    final bedStrength = (0.15 + 0.55 * math.pow(energy, 0.85))
-        .toDouble()
-        .clamp(0.15, 0.85);
-    final bedSharp = (0.30 + 0.45 * (0.5 * R + 0.2 * L)).clamp(0.25, 0.85);
-    final bedHz = (12.0 + 18.0 * math.pow(energy, 0.85))
-        .toDouble()
-        .clamp(12.0, 24.0);
-    if (energy > 0.02) {
-      // Ensure any prior continuous bed is off
-      _Haptics.stopContinuous();
-      _Haptics.bedTick(strength: bedStrength, sharpness: bedSharp, maxHz: bedHz);
+    // Audio equalizer impulses (phase-accurate, NOT continuous bed).
+    // Steering logic is separate.
+    final aIntRaw = fbAudInt.clamp(0.0, 1.0);
+    final aHzRaw = fbAudHz.clamp(6.0, 240.0);
+    const onThresh = 0.03;
+    if (aIntRaw > onThresh) {
+      // Smooth incoming values slightly to avoid jittery feel
+      const k = 0.25; // EMA factor
+      _eqSmoothHz = (_eqSmoothHz == 0.0)
+          ? aHzRaw
+          : (k * aHzRaw + (1 - k) * _eqSmoothHz);
+      _eqSmoothInt = (_eqSmoothInt == 0.0)
+          ? aIntRaw
+          : (k * aIntRaw + (1 - k) * _eqSmoothInt);
+
+      // Integrate phase using elapsed time for precise frequency
+      if (_eqLastMs == 0) {
+        _eqLastMs = now;
+        _eqActive = true;
+        // Ensure continuous bed is off to avoid interactions
+        _Haptics.stopContinuous();
+      }
+
+      final dt = ((_eqLastMs == 0) ? 0.0 : (now - _eqLastMs) / 1000.0);
+      _eqLastMs = now;
+
+      // Cap to practical tick rates for devices
+      final effHz = _eqSmoothHz.clamp(6.0, 48.0);
+      _eqPhase += effHz * dt;
+
+      // Tick emission count; avoid backlog explosions
+      int emit = _eqPhase.floor();
+      if (emit > 3) emit = 3; // hard cap per frame
+      _eqPhase -= emit;
+
+      if (emit > 0) {
+        // Map intensity perceptually; preserve stereo balance as sharpness bias
+        final powI = math.pow(_eqSmoothInt, 0.90).toDouble();
+        final baseIntensity = (0.10 + 0.82 * powI).clamp(0.10, 1.00);
+        final balance = (R - L).clamp(-1.0, 1.0);
+        final sharp = (0.40 + 0.20 * balance.abs()).clamp(0.30, 0.85);
+
+        // Slight micro-variation avoids monotone feel at low Hz
+        for (int i = 0; i < emit; i++) {
+          final jitter = 0.04 * (0.5 - math.Random(now + i).nextDouble());
+          final intensity = (baseIntensity + jitter).clamp(0.10, 1.00);
+          _Haptics.tick(strength: intensity, sharpness: sharp, maxHz: 60);
+        }
+
+        final nowLog = now;
+        if (nowLog - _lastEqLogMs > 250) {
+          debugPrint('[EQ] hz=${effHz.toStringAsFixed(1)} int=${baseIntensity.toStringAsFixed(2)} emit=$emit phase=${_eqPhase.toStringAsFixed(2)}');
+          _lastEqLogMs = nowLog;
+        }
+      }
     } else {
-      _Haptics.stopContinuous();
+      if (_eqActive) {
+        // Transitioned below threshold; stop and clear state
+        final nowLog = now;
+        if (nowLog - _lastEqLogMs > 500) {
+          debugPrint('[EQ] below threshold audInt=${aIntRaw.toStringAsFixed(2)} (pause)');
+          _lastEqLogMs = nowLog;
+        }
+      }
+      _eqActive = false;
+      _eqLastMs = now; // keep timebase for quick resume
     }
 
     // Spike detection v. EMAs (impacts/ABS etc.)
