@@ -140,17 +140,29 @@ class ViGEmBridge:
 
     def _send_json(self, obj):
         if self._p and self._p.stdin:
-            self._p.stdin.write(json.dumps(obj) + "\n")
-            self._p.stdin.flush()
+            try:
+                self._p.stdin.write(json.dumps(obj) + "\n")
+                self._p.stdin.flush()
+            except Exception as e:
+                logging.warning(f"⚠️ ViGEmBridge send error: {e}")
+                # Mark as unavailable if we can't communicate
+                self.available = False
+                raise e
 
     def send_state(self, lx, ly, rt, lt, buttons):
-        self._send_json({
-            "lx": lx,
-            "ly": ly,
-            "rt": rt,
-            "lt": lt,
-            "buttons": buttons
-        })
+        if not self.available:
+            return
+        try:
+            self._send_json({
+                "lx": lx,
+                "ly": ly,
+                "rt": rt,
+                "lt": lt,
+                "buttons": buttons
+            })
+        except Exception as e:
+            logging.warning(f"⚠️ ViGEmBridge send_state error: {e}")
+            self.available = False
 
     def set_feedback_callback(self, cb):
         """Register feedback callback.
