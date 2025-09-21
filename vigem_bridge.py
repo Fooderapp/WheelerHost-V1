@@ -116,6 +116,7 @@ class ViGEmBridge:
         self._target = (target or "x360").lower().strip()
         self._p = None
         self._ffb_cb = None
+        self.available = True
         self._start()
 
     def _default_path(self):
