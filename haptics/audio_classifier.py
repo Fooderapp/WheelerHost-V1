@@ -61,37 +61,37 @@ class AudioClassifier:
             'impact': 0.0
         }
         
-        # Tunable parameters
+        # Tunable parameters (improved for better identification)
         self._params = {
-            # Music detection (harmonic content)
-            'music_harmonic_thresh': 0.3,
-            'music_stability_thresh': 0.8,
+            # Music detection (harmonic content) - tighter thresholds
+            'music_harmonic_thresh': 0.4,  # Higher threshold for more selective music detection
+            'music_stability_thresh': 0.85,  # Require more stability
             
-            # Road/surface (broadband noise)
-            'road_freq_min': 150,
-            'road_freq_max': 2000,
-            'road_broadband_thresh': 0.2,
+            # Road/surface (broadband noise) - better sensitivity
+            'road_freq_min': 200,    # Focus on tire noise range
+            'road_freq_max': 3000,   # Extended range for different surfaces
+            'road_broadband_thresh': 0.15,  # More sensitive to broadband content
             
-            # Engine (low frequency harmonics)
-            'engine_freq_min': 30,
-            'engine_freq_max': 300,
-            'engine_harmonic_thresh': 0.25,
+            # Engine (low frequency harmonics) - more specific
+            'engine_freq_min': 40,   # Lower for deep engine sounds
+            'engine_freq_max': 250,  # Focused on engine fundamentals
+            'engine_harmonic_thresh': 0.35,  # Higher threshold for better detection
             
-            # Impact (sudden spectral flux)
-            'impact_flux_thresh': 0.05,
-            'impact_decay_rate': 0.95,
+            # Impact (sudden spectral flux) - reduced sensitivity for less ticking
+            'impact_flux_thresh': 0.08,  # Higher threshold to reduce false positives
+            'impact_decay_rate': 0.92,   # Faster decay to reduce sustained ticking
             
-            # Smoothing
-            'smooth_attack': 0.1,
-            'smooth_decay': 0.3
+            # Smoothing (improved to reduce ticking feel)
+            'smooth_attack': 0.05,   # Slower attack for smoother response
+            'smooth_decay': 0.15     # Faster decay to prevent sticking
         }
         
-        # Category weights/gains (controllable via sliders)
+        # Category weights/gains (controllable via sliders) - improved defaults
         self._gains = {
-            'music': 0.1,      # Usually want minimal music FFB
-            'road': 1.0,       # Road effects
-            'engine': 0.8,     # Engine vibration
-            'impact': 1.5      # Crash/impact emphasis
+            'music': 0.05,     # Very low music FFB to avoid interference
+            'road': 1.0,       # Full road effects
+            'engine': 0.6,     # Moderate engine vibration  
+            'impact': 1.2      # Emphasized but not overwhelming impacts
         }
         
     def set_gain(self, category: str, gain: float):
@@ -127,13 +127,24 @@ class AudioClassifier:
             # Impact - sudden spectral changes
             impact_score = self._detect_impact(spectrum, freqs)
             
-            # Smooth the features
-            dt = 1.0 / 30.0  # Assume ~30fps updates
+            # Smooth the features (improved smoothing to reduce ticking)
+            dt = 1.0 / 60.0  # Assume ~60fps updates, but smoother
             for category, new_val in [('music', music_score), ('road', road_score), 
                                     ('engine', engine_score), ('impact', impact_score)]:
                 old_val = self._features[category]
-                alpha = self._params['smooth_attack'] if new_val > old_val else self._params['smooth_decay']
+                # Use different smoothing for impact to reduce ticking
+                if category == 'impact':
+                    # Impact gets special treatment - quick attack, fast decay
+                    alpha = 0.2 if new_val > old_val else 0.4
+                    # Apply decay even when no new impact detected
+                    if new_val < 0.01:
+                        new_val = old_val * self._params['impact_decay_rate']
+                else:
+                    alpha = self._params['smooth_attack'] if new_val > old_val else self._params['smooth_decay']
+                
                 self._features[category] = old_val + alpha * (new_val - old_val)
+                # Ensure values stay in valid range
+                self._features[category] = max(0.0, min(1.0, self._features[category]))
             
             # Update history
             self._spectrum_history.append(spectrum.copy())
@@ -290,32 +301,47 @@ class AudioClassifier:
         """
         Generate force feedback (left, right) based on classified audio categories.
         Returns (left_intensity, right_intensity) in range [0, 1].
+        Improved to reduce ticking and provide smoother response.
         """
         with self._lock:
             left_ffb = 0.0
             right_ffb = 0.0
             
-            # Road effects - stereo broadband rumble
+            # Road effects - stereo broadband rumble (primary feel)
             road_intensity = categories.get('road', 0.0) * self._gains['road']
-            left_ffb += road_intensity * 0.8
-            right_ffb += road_intensity * 0.8
+            left_ffb += road_intensity * 0.9   # Strong road feel
+            right_ffb += road_intensity * 0.9
             
-            # Engine - low frequency rumble, slightly left-biased
+            # Engine - low frequency rumble, balanced stereo
             engine_intensity = categories.get('engine', 0.0) * self._gains['engine']
-            left_ffb += engine_intensity * 0.6
-            right_ffb += engine_intensity * 0.4
+            left_ffb += engine_intensity * 0.7
+            right_ffb += engine_intensity * 0.7
             
-            # Impact - sharp burst, favor stronger side
+            # Impact - sharp but controlled burst (reduced ticking)
             impact_intensity = categories.get('impact', 0.0) * self._gains['impact']
-            left_ffb += impact_intensity * 0.9
-            right_ffb += impact_intensity * 0.7
+            # Apply additional smoothing to impact to prevent ticking
+            smoothed_impact = min(impact_intensity, 0.8)  # Cap impact intensity
+            left_ffb += smoothed_impact * 0.8
+            right_ffb += smoothed_impact * 0.6
             
-            # Music - minimal, subtle tactile feel
+            # Music - very minimal, just subtle background
             music_intensity = categories.get('music', 0.0) * self._gains['music']
-            left_ffb += music_intensity * 0.2
-            right_ffb += music_intensity * 0.2
+            left_ffb += music_intensity * 0.1
+            right_ffb += music_intensity * 0.1
             
-            # Clamp to valid range
+            # Apply gentle saturation curve to prevent harsh clipping
+            def soft_saturate(x):
+                if x <= 0.7:
+                    return x
+                else:
+                    # Soft compression above 70%
+                    excess = x - 0.7
+                    return 0.7 + excess * 0.5
+            
+            left_ffb = soft_saturate(left_ffb)
+            right_ffb = soft_saturate(right_ffb)
+            
+            # Final clamping
             left_ffb = max(0.0, min(1.0, left_ffb))
             right_ffb = max(0.0, min(1.0, right_ffb))
             

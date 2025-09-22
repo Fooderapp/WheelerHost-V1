@@ -212,11 +212,18 @@ class MainWindow(QtWidgets.QWidget):
         self.sldMusic = QtWidgets.QSlider(Qt.Horizontal); self.sldMusic.setRange(0, 200); self.sldMusic.setValue(10)  # Changed to 0-200 range like others
         self.sldIntensity = QtWidgets.QSlider(Qt.Horizontal); self.sldIntensity.setRange(0, 200); self.sldIntensity.setValue(100)
         # Removed gate controls - no longer needed with new audio classification
-        ga.addWidget(QtWidgets.QLabel("Road gain"),   1, 0); ga.addWidget(self.sldRoad, 1, 1)
-        ga.addWidget(QtWidgets.QLabel("Engine gain"), 2, 0); ga.addWidget(self.sldEng,  2, 1)
-        ga.addWidget(QtWidgets.QLabel("Impact gain"), 3, 0); ga.addWidget(self.sldImp,  3, 1)
-        ga.addWidget(QtWidgets.QLabel("Music gain"), 4, 0); ga.addWidget(self.sldMusic, 4, 1)  # Changed from "suppression" to "gain"
-        ga.addWidget(QtWidgets.QLabel("Intensity"),     5, 0); ga.addWidget(self.sldIntensity, 5, 1)
+        # Add value labels for sliders
+        self.lblRoadVal = QtWidgets.QLabel("100%"); self.lblRoadVal.setMinimumWidth(40)
+        self.lblEngVal = QtWidgets.QLabel("80%"); self.lblEngVal.setMinimumWidth(40)
+        self.lblImpVal = QtWidgets.QLabel("150%"); self.lblImpVal.setMinimumWidth(40)
+        self.lblMusicVal = QtWidgets.QLabel("10%"); self.lblMusicVal.setMinimumWidth(40)
+        self.lblIntensityVal = QtWidgets.QLabel("100%"); self.lblIntensityVal.setMinimumWidth(40)
+        
+        ga.addWidget(QtWidgets.QLabel("🛣️ Road/Surface FFB"), 1, 0); ga.addWidget(self.sldRoad, 1, 1); ga.addWidget(self.lblRoadVal, 1, 2)
+        ga.addWidget(QtWidgets.QLabel("🚗 Engine Vibration"), 2, 0); ga.addWidget(self.sldEng,  2, 1); ga.addWidget(self.lblEngVal, 2, 2)
+        ga.addWidget(QtWidgets.QLabel("💥 Impact/Crash FFB"), 3, 0); ga.addWidget(self.sldImp,  3, 1); ga.addWidget(self.lblImpVal, 3, 2)
+        ga.addWidget(QtWidgets.QLabel("🎵 Music Suppression"), 4, 0); ga.addWidget(self.sldMusic, 4, 1); ga.addWidget(self.lblMusicVal, 4, 2)
+        ga.addWidget(QtWidgets.QLabel("🔊 Overall Intensity"),     5, 0); ga.addWidget(self.sldIntensity, 5, 1); ga.addWidget(self.lblIntensityVal, 5, 2)
         rightCol.addWidget(boxAudio)
 
         labClients = QtWidgets.QLabel("Client"); rightCol.addWidget(labClients)
@@ -253,11 +260,11 @@ class MainWindow(QtWidgets.QWidget):
 
         # Audio sliders → server (updated for new audio classification system)
         self.cmbAudio.currentIndexChanged.connect(lambda _: self.server.set_audio_device(self.cmbAudio.currentData()))
-        self.sldRoad.valueChanged.connect(lambda v: self.server.set_audio_category_gain('road', v/100.0))
-        self.sldEng.valueChanged.connect(lambda v: self.server.set_audio_category_gain('engine', v/100.0))
-        self.sldImp.valueChanged.connect(lambda v: self.server.set_audio_category_gain('impact', v/100.0))
-        self.sldMusic.valueChanged.connect(lambda v: self.server.set_audio_category_gain('music', v/100.0))
-        self.sldIntensity.valueChanged.connect(lambda v: self.server.set_audio_intensity(v/100.0))
+        self.sldRoad.valueChanged.connect(lambda v: [self.server.set_audio_category_gain('road', v/100.0), self.lblRoadVal.setText(f"{v}%")])
+        self.sldEng.valueChanged.connect(lambda v: [self.server.set_audio_category_gain('engine', v/100.0), self.lblEngVal.setText(f"{v}%")])
+        self.sldImp.valueChanged.connect(lambda v: [self.server.set_audio_category_gain('impact', v/100.0), self.lblImpVal.setText(f"{v}%")])
+        self.sldMusic.valueChanged.connect(lambda v: [self.server.set_audio_category_gain('music', v/100.0), self.lblMusicVal.setText(f"{v}%")])
+        self.sldIntensity.valueChanged.connect(lambda v: [self.server.set_audio_intensity(v/100.0), self.lblIntensityVal.setText(f"{v}%")])
         # Reflect audio helper/probe status
         try:
             self.server.audio_status_changed.connect(lambda s: self.lblAudioStatus.setText(f"Audio: {s}"))
