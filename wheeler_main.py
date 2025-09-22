@@ -211,18 +211,12 @@ class MainWindow(QtWidgets.QWidget):
         self.sldImp  = QtWidgets.QSlider(Qt.Horizontal); self.sldImp.setRange(0, 200);  self.sldImp.setValue(150)
         self.sldMusic = QtWidgets.QSlider(Qt.Horizontal); self.sldMusic.setRange(0, 200); self.sldMusic.setValue(10)  # Changed to 0-200 range like others
         self.sldIntensity = QtWidgets.QSlider(Qt.Horizontal); self.sldIntensity.setRange(0, 200); self.sldIntensity.setValue(100)
-        # Gate thresholds + hold
-        self.sldGateOn  = QtWidgets.QSlider(Qt.Horizontal); self.sldGateOn.setRange(0, 50);  self.sldGateOn.setValue(12)
-        self.sldGateOff = QtWidgets.QSlider(Qt.Horizontal); self.sldGateOff.setRange(0, 50); self.sldGateOff.setValue(5)
-        self.sldGateHold= QtWidgets.QSlider(Qt.Horizontal); self.sldGateHold.setRange(100, 1500); self.sldGateHold.setValue(600)
+        # Removed gate controls - no longer needed with new audio classification
         ga.addWidget(QtWidgets.QLabel("Road gain"),   1, 0); ga.addWidget(self.sldRoad, 1, 1)
         ga.addWidget(QtWidgets.QLabel("Engine gain"), 2, 0); ga.addWidget(self.sldEng,  2, 1)
         ga.addWidget(QtWidgets.QLabel("Impact gain"), 3, 0); ga.addWidget(self.sldImp,  3, 1)
         ga.addWidget(QtWidgets.QLabel("Music gain"), 4, 0); ga.addWidget(self.sldMusic, 4, 1)  # Changed from "suppression" to "gain"
-        ga.addWidget(QtWidgets.QLabel("Gate ON thr"), 5, 0); ga.addWidget(self.sldGateOn,  5, 1)
-        ga.addWidget(QtWidgets.QLabel("Gate OFF thr"),6, 0); ga.addWidget(self.sldGateOff, 6, 1)
-        ga.addWidget(QtWidgets.QLabel("Gate hold (ms)"),7, 0); ga.addWidget(self.sldGateHold, 7, 1)
-        ga.addWidget(QtWidgets.QLabel("Intensity"),     8, 0); ga.addWidget(self.sldIntensity, 8, 1)
+        ga.addWidget(QtWidgets.QLabel("Intensity"),     5, 0); ga.addWidget(self.sldIntensity, 5, 1)
         rightCol.addWidget(boxAudio)
 
         labClients = QtWidgets.QLabel("Client"); rightCol.addWidget(labClients)
@@ -263,9 +257,6 @@ class MainWindow(QtWidgets.QWidget):
         self.sldEng.valueChanged.connect(lambda v: self.server.set_audio_category_gain('engine', v/100.0))
         self.sldImp.valueChanged.connect(lambda v: self.server.set_audio_category_gain('impact', v/100.0))
         self.sldMusic.valueChanged.connect(lambda v: self.server.set_audio_category_gain('music', v/100.0))
-        self.sldGateOn.valueChanged.connect(lambda v: self.server.set_audio_gate_on(v/100.0))
-        self.sldGateOff.valueChanged.connect(lambda v: self.server.set_audio_gate_off(v/100.0))
-        self.sldGateHold.valueChanged.connect(lambda v: self.server.set_audio_gate_hold(int(v)))
         self.sldIntensity.valueChanged.connect(lambda v: self.server.set_audio_intensity(v/100.0))
         # Reflect audio helper/probe status
         try:

@@ -2,10 +2,28 @@
 Real-time audio classification for force feedback generation.
 Classifies incoming audio into different categories and generates appropriate FFB.
 """
-import numpy as np
 import threading
 import time
 from typing import Dict, Optional, Callable
+
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:
+    HAS_NUMPY = False
+    # Create dummy numpy for graceful fallback
+    class DummyNumPy:
+        def array(self, *args, **kwargs): return []
+        def mean(self, *args, **kwargs): return 0.0
+        def sum(self, *args, **kwargs): return 0.0
+        def max(self, *args, **kwargs): return 0.0
+        def exp(self, *args, **kwargs): return 1.0
+        def log(self, *args, **kwargs): return 0.0
+        def clip(self, *args, **kwargs): return 0.0
+        def maximum(self, *args, **kwargs): return 0.0
+        def corrcoef(self, *args, **kwargs): return [[1.0, 1.0], [1.0, 1.0]]
+        def isnan(self, *args, **kwargs): return False
+    np = DummyNumPy()
 
 class AudioClassifier:
     """
@@ -15,11 +33,20 @@ class AudioClassifier:
     - Road/Surface (broadband noise, tire skid)
     - Engine (low frequency harmonics)
     - Impact/Crash (sudden spectral changes)
+    
+    Gracefully handles missing numpy dependency.
     """
     
     def __init__(self, samplerate: int = 48000):
         self.sr = samplerate
         self._lock = threading.Lock()
+        self.available = HAS_NUMPY
+        
+        if not HAS_NUMPY:
+            # Fallback mode - return simple static values
+            self._features = {'music': 0.0, 'road': 0.5, 'engine': 0.3, 'impact': 0.0}
+            self._gains = {'music': 0.1, 'road': 1.0, 'engine': 0.8, 'impact': 1.5}
+            return
         
         # Classification state
         self._prev_spectrum = None
@@ -78,11 +105,15 @@ class AudioClassifier:
         with self._lock:
             return self._gains.copy()
     
-    def classify_spectrum(self, spectrum: np.ndarray, freqs: np.ndarray) -> Dict[str, float]:
+    def classify_spectrum(self, spectrum, freqs) -> Dict[str, float]:
         """
         Classify a frequency spectrum into different categories.
         Returns classification confidence for each category (0-1).
         """
+        if not self.available:
+            # Fallback mode - return static values
+            return self._features.copy()
+            
         with self._lock:
             # Music detection - look for harmonic structure and stability
             music_score = self._detect_music(spectrum, freqs)
@@ -113,8 +144,10 @@ class AudioClassifier:
             
             return self._features.copy()
     
-    def _detect_music(self, spectrum: np.ndarray, freqs: np.ndarray) -> float:
+    def _detect_music(self, spectrum, freqs) -> float:
         """Detect musical content via harmonic analysis and stability."""
+        if not self.available:
+            return 0.1
         # Harmonic detection in musical range (200-4000 Hz)
         music_mask = (freqs >= 200) & (freqs <= 4000)
         music_spectrum = spectrum[music_mask]
@@ -147,8 +180,10 @@ class AudioClassifier:
             
         return min(1.0, music_score)
     
-    def _detect_road(self, spectrum: np.ndarray, freqs: np.ndarray) -> float:
+    def _detect_road(self, spectrum, freqs) -> float:
         """Detect road/surface noise - broadband characteristics."""
+        if not self.available:
+            return 0.5
         road_mask = (freqs >= self._params['road_freq_min']) & (freqs <= self._params['road_freq_max'])
         road_spectrum = spectrum[road_mask]
         
@@ -169,8 +204,10 @@ class AudioClassifier:
             
         return road_score
     
-    def _detect_engine(self, spectrum: np.ndarray, freqs: np.ndarray) -> float:
+    def _detect_engine(self, spectrum, freqs) -> float:
         """Detect engine sounds - low frequency harmonic content."""
+        if not self.available:
+            return 0.3
         engine_mask = (freqs >= self._params['engine_freq_min']) & (freqs <= self._params['engine_freq_max'])
         engine_spectrum = spectrum[engine_mask]
         
@@ -194,8 +231,10 @@ class AudioClassifier:
         
         return engine_score
     
-    def _detect_impact(self, spectrum: np.ndarray, freqs: np.ndarray) -> float:
+    def _detect_impact(self, spectrum, freqs) -> float:
         """Detect impact/crash sounds - sudden spectral changes."""
+        if not self.available:
+            return 0.0
         if self._prev_spectrum is None:
             return 0.0
         
@@ -213,8 +252,10 @@ class AudioClassifier:
         
         return impact_score
     
-    def _find_spectral_peaks(self, spectrum: np.ndarray, prominence: float = 0.1) -> list:
+    def _find_spectral_peaks(self, spectrum, prominence: float = 0.1) -> list:
         """Find peaks in spectrum (simple peak detection)."""
+        if not self.available or not spectrum:
+            return []
         if len(spectrum) < 3:
             return []
         
@@ -229,9 +270,9 @@ class AudioClassifier:
         
         return peaks
     
-    def _calculate_stability(self, current: np.ndarray, history: list, mask: np.ndarray) -> float:
+    def _calculate_stability(self, current, history: list, mask) -> float:
         """Calculate spectral stability over time."""
-        if len(history) == 0:
+        if not self.available or len(history) == 0:
             return 0.0
         
         correlations = []
