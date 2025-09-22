@@ -118,6 +118,15 @@ class UDPServer(QtCore.QObject):
         self._audio_enabled = str(os.environ.get("WHEELER_AUDIO", "1")).strip().lower() not in ("0","off","false","no")
         self._audio_dev = -1  # -1 = Auto
         self._audio = AudioProbe(device=None) if (AudioProbe and self._audio_enabled) else None
+        
+        # Enhanced FFB with audio classification (new)
+        self._enhanced_ffb = None
+        try:
+            from haptics.enhanced_ffb_synth import EnhancedFfbSynth
+            self._enhanced_ffb = EnhancedFfbSynth()
+            LOG.log("✨ Enhanced FFB with audio classification initialized")
+        except Exception as e:
+            LOG.log(f"⚠️ Enhanced FFB unavailable: {e}")
         # Windows helper (NAudio) for robust loopback without device config
         self._audio_helper = None
         if platform.system().lower() == 'windows' and str(os.environ.get("WHEELER_AUDIO_HELPER","1")).strip().lower() not in ("0","off","false","no"):
@@ -757,20 +766,32 @@ class UDPServer(QtCore.QObject):
             pass
         LOG.log("🛑 UDP server stopped")
 
-    # ----- audio tuning -----
+    # ----- audio tuning (updated for audio classification) -----
+    @QtCore.Slot(str, float)
+    def set_audio_category_gain(self, category: str, gain: float):
+        """Set gain for specific audio category (music, road, engine, impact)."""
+        if hasattr(self, '_enhanced_ffb') and self._enhanced_ffb:
+            try:
+                self._enhanced_ffb.set_category_gain(category, float(gain))
+                LOG.log(f"🎚️ Audio {category} gain = {gain:.2f}")
+            except Exception as e:
+                LOG.log(f"⚠️ Failed to set {category} gain: {e}")
+        
+        # Fallback to legacy audio probe parameters for compatibility
+        if self._audio and category in ['road', 'engine', 'impact']:
+            try:
+                param_name = f"{category}_gain"
+                self._audio.set_params(**{param_name: float(gain)})
+            except Exception:
+                pass
+
     @QtCore.Slot(float)
     def set_audio_road_gain(self, v: float):
-        if self._audio:
-            try: self._audio.set_params(road_gain=float(v))
-            except Exception: pass
-            LOG.log(f"🎚️ Audio road gain = {v:.2f}")
+        self.set_audio_category_gain('road', v)
 
     @QtCore.Slot(float)
     def set_audio_engine_gain(self, v: float):
-        if self._audio:
-            try: self._audio.set_params(engine_gain=float(v))
-            except Exception: pass
-            LOG.log(f"🎚️ Audio engine gain = {v:.2f}")
+        self.set_audio_category_gain('engine', v)
 
     # ----- audio equalizer helpers -----
     def _compute_audio_bands(

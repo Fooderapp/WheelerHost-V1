@@ -207,9 +207,9 @@ class MainWindow(QtWidgets.QWidget):
         self.lblAudioStatus = QtWidgets.QLabel("Audio: Inactive")
         ga.addWidget(self.lblAudioStatus, 0, 2)
         self.sldRoad = QtWidgets.QSlider(Qt.Horizontal); self.sldRoad.setRange(0, 200); self.sldRoad.setValue(100)
-        self.sldEng  = QtWidgets.QSlider(Qt.Horizontal); self.sldEng.setRange(0, 200);  self.sldEng.setValue(100)
-        self.sldImp  = QtWidgets.QSlider(Qt.Horizontal); self.sldImp.setRange(0, 200);  self.sldImp.setValue(100)
-        self.sldMusic = QtWidgets.QSlider(Qt.Horizontal); self.sldMusic.setRange(0, 100); self.sldMusic.setValue(60)
+        self.sldEng  = QtWidgets.QSlider(Qt.Horizontal); self.sldEng.setRange(0, 200);  self.sldEng.setValue(80)
+        self.sldImp  = QtWidgets.QSlider(Qt.Horizontal); self.sldImp.setRange(0, 200);  self.sldImp.setValue(150)
+        self.sldMusic = QtWidgets.QSlider(Qt.Horizontal); self.sldMusic.setRange(0, 200); self.sldMusic.setValue(10)  # Changed to 0-200 range like others
         self.sldIntensity = QtWidgets.QSlider(Qt.Horizontal); self.sldIntensity.setRange(0, 200); self.sldIntensity.setValue(100)
         # Gate thresholds + hold
         self.sldGateOn  = QtWidgets.QSlider(Qt.Horizontal); self.sldGateOn.setRange(0, 50);  self.sldGateOn.setValue(12)
@@ -218,7 +218,7 @@ class MainWindow(QtWidgets.QWidget):
         ga.addWidget(QtWidgets.QLabel("Road gain"),   1, 0); ga.addWidget(self.sldRoad, 1, 1)
         ga.addWidget(QtWidgets.QLabel("Engine gain"), 2, 0); ga.addWidget(self.sldEng,  2, 1)
         ga.addWidget(QtWidgets.QLabel("Impact gain"), 3, 0); ga.addWidget(self.sldImp,  3, 1)
-        ga.addWidget(QtWidgets.QLabel("Music suppression"), 4, 0); ga.addWidget(self.sldMusic, 4, 1)
+        ga.addWidget(QtWidgets.QLabel("Music gain"), 4, 0); ga.addWidget(self.sldMusic, 4, 1)  # Changed from "suppression" to "gain"
         ga.addWidget(QtWidgets.QLabel("Gate ON thr"), 5, 0); ga.addWidget(self.sldGateOn,  5, 1)
         ga.addWidget(QtWidgets.QLabel("Gate OFF thr"),6, 0); ga.addWidget(self.sldGateOff, 6, 1)
         ga.addWidget(QtWidgets.QLabel("Gate hold (ms)"),7, 0); ga.addWidget(self.sldGateHold, 7, 1)
@@ -257,12 +257,12 @@ class MainWindow(QtWidgets.QWidget):
         self.cmbPad.currentTextChanged.connect(lambda s: self.server.set_pad_target(s.lower()))
         # Removed legacy FFB toggles (bed/hybrid/mask/test) to keep FFB simple
 
-        # Audio sliders → server
+        # Audio sliders → server (updated for new audio classification system)
         self.cmbAudio.currentIndexChanged.connect(lambda _: self.server.set_audio_device(self.cmbAudio.currentData()))
-        self.sldRoad.valueChanged.connect(lambda v: self.server.set_audio_road_gain(v/100.0))
-        self.sldEng.valueChanged.connect(lambda v: self.server.set_audio_engine_gain(v/100.0))
-        self.sldImp.valueChanged.connect(lambda v: self.server.set_audio_impact_gain(v/100.0))
-        self.sldMusic.valueChanged.connect(lambda v: self.server.set_audio_music_suppress(v/100.0))
+        self.sldRoad.valueChanged.connect(lambda v: self.server.set_audio_category_gain('road', v/100.0))
+        self.sldEng.valueChanged.connect(lambda v: self.server.set_audio_category_gain('engine', v/100.0))
+        self.sldImp.valueChanged.connect(lambda v: self.server.set_audio_category_gain('impact', v/100.0))
+        self.sldMusic.valueChanged.connect(lambda v: self.server.set_audio_category_gain('music', v/100.0))
         self.sldGateOn.valueChanged.connect(lambda v: self.server.set_audio_gate_on(v/100.0))
         self.sldGateOff.valueChanged.connect(lambda v: self.server.set_audio_gate_off(v/100.0))
         self.sldGateHold.valueChanged.connect(lambda v: self.server.set_audio_gate_hold(int(v)))
