@@ -1,4 +1,4 @@
-﻿# wheeler_main.py
+﻿# wheeler_main.py...
 # Resizable main window + overlay + UDP server (single-client lock).
 # Hotkeys: F9 toggle overlay, F11 reset overlay.
 
