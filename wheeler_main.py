@@ -1,4 +1,5 @@
-﻿# wheeler_main.py...
+﻿# Minor non-functional change for commit: clarifying comment for version tracking
+# wheeler_main.py...
 # Resizable main window + overlay + UDP server (single-client lock).
 # Hotkeys: F9 toggle overlay, F11 reset overlay.
 

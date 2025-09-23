@@ -1,3 +1,4 @@
+# Minor non-functional change for commit: clarifying comment for version tracking
 import numpy as np
 import sounddevice as sd
 from haptics.onnx_audio_event_detector import OnnxAudioEventDetector
