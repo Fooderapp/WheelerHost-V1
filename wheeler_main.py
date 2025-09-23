@@ -87,6 +87,7 @@ class QRPane(QtWidgets.QScrollArea):
 
 # --------- Main Window ----------
 class MainWindow(QtWidgets.QWidget):
+    # (Stray self.setLayout(grid) removed; all code is now inside methods)
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Wheeler — Windows (Single Client + Overlay)")
@@ -276,9 +277,10 @@ class MainWindow(QtWidgets.QWidget):
         # Layout
         grid = QtWidgets.QGridLayout(self)
         grid.setContentsMargins(16, 12, 16, 12)
-        grid.setHorizontalSpacing(18); grid.setVerticalSpacing(12)
-    grid.addLayout(self.top, 0, 0, 1, 2)
-        grid.addLayout(leftCol,  1, 0, 1, 1)
+        grid.setHorizontalSpacing(18)
+        grid.setVerticalSpacing(12)
+        grid.addLayout(self.top, 0, 0, 1, 2)
+        grid.addLayout(leftCol, 1, 0, 1, 1)
         grid.addLayout(rightCol, 1, 1, 1, 1)
 
         # Wire overlay controls (broadcast to all overlays)
