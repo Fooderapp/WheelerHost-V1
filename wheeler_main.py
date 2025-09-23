@@ -21,9 +21,10 @@ except Exception:
     OnnxAudioEventDetector = None
 from overlay import Overlay
 try:
-    from haptics.audio_probe import list_devices as list_audio_devices
+    from haptics.audio_probe import list_devices as list_audio_devices, AudioProbe
 except Exception:
     list_audio_devices = None
+    AudioProbe = None
 
 # --------- QR Pane (shows QR for udp://IP:PORT but caption is IP:PORT only) ----------
 import io, socket, qrcode
@@ -91,6 +92,8 @@ class MainWindow(QtWidgets.QWidget):
         self.setWindowTitle("Wheeler — Windows (Single Client + Overlay)")
         self.resize(1180, 800)              # resizable by default
         self.setMinimumSize(900, 600)
+        # AudioProbe for ONNX FFB (real audio input)
+        self.audio_probe = None
         # ONNX/classic FFB toggle (initialized here, added to layout below)
         self.chkOnnxFfb = QtWidgets.QCheckBox("ONNX Audio FFB")
         self.chkOnnxFfb.setChecked(False)
@@ -126,7 +129,7 @@ class MainWindow(QtWidgets.QWidget):
             self.overlays.append(Overlay())
 
         # Top bar
-        top = QtWidgets.QHBoxLayout()
+        self.top = QtWidgets.QHBoxLayout()
         self.lblLan = QtWidgets.QLabel(f"{list_ipv4()[0]}:8765")
         self.btnStart = QtWidgets.QPushButton("STOP")
         self.btnStart.clicked.connect(self.toggleServer)
@@ -139,23 +142,36 @@ class MainWindow(QtWidgets.QWidget):
         # FFB source label
         self.lblFfbSrc = QtWidgets.QLabel("FFB: –")
 
-    top.addWidget(self.lblLan)
-    top.addStretch(1)
-    top.addWidget(QtWidgets.QLabel("Pad:"))
-    top.addWidget(self.cmbPad)
-    top.addSpacing(8)
-    top.addWidget(self.lblFfbSrc)
-    top.addSpacing(8)
-    top.addWidget(self.chkFreezeSteer)
-    top.addWidget(self.chkEditOverlay)
-    top.addWidget(self.chkOnnxFfb)
-    top.addWidget(self.btnStart)
+        self.top.addWidget(self.lblLan)
+        self.top.addStretch(1)
+        self.top.addWidget(QtWidgets.QLabel("Pad:"))
+        self.top.addWidget(self.cmbPad)
+        self.top.addSpacing(8)
+        self.top.addWidget(self.lblFfbSrc)
+        self.top.addSpacing(8)
+        self.top.addWidget(self.chkFreezeSteer)
+        self.top.addWidget(self.chkEditOverlay)
+        self.top.addWidget(self.chkOnnxFfb)
+        self.top.addWidget(self.btnStart)
     def _toggle_onnx_ffb(self, checked):
         self.use_onnx_ffb = checked
         if checked:
             self.lblFfbSrc.setText("FFB: ONNX")
+            # Start audio probe if not running
+            if self.audio_probe is None and AudioProbe is not None:
+                try:
+                    self.audio_probe = AudioProbe(samplerate=48000, blocksize=1024)
+                except Exception as e:
+                    self.audio_probe = None
         else:
             self.lblFfbSrc.setText("FFB: AUDIO")
+            # Optionally stop audio probe
+            if self.audio_probe is not None:
+                try:
+                    self.audio_probe.close()
+                except Exception:
+                    pass
+                self.audio_probe = None
 
         # Left column: QR + Inputs
         leftCol = QtWidgets.QVBoxLayout()
@@ -261,7 +277,7 @@ class MainWindow(QtWidgets.QWidget):
         grid = QtWidgets.QGridLayout(self)
         grid.setContentsMargins(16, 12, 16, 12)
         grid.setHorizontalSpacing(18); grid.setVerticalSpacing(12)
-        grid.addLayout(top,      0, 0, 1, 2)
+    grid.addLayout(self.top, 0, 0, 1, 2)
         grid.addLayout(leftCol,  1, 0, 1, 1)
         grid.addLayout(rightCol, 1, 1, 1, 1)
 
@@ -358,13 +374,10 @@ class MainWindow(QtWidgets.QWidget):
         self._for_each_overlay(lambda o: o.set_telemetry(x, latG))
 
         # ONNX/classic FFB logic
-        if self.use_onnx_ffb and self.onnx_detector is not None:
-            # Here you would get audio data from the audio input (not shown here)
-            # For demo, use zeros
-            import numpy as np
-            fake_audio = np.zeros(16000, dtype=np.float32)  # 1s of silence at 16kHz
+        if self.use_onnx_ffb and self.onnx_detector is not None and self.audio_probe is not None:
             try:
-                events = self.onnx_detector.predict(fake_audio)
+                audio = self.audio_probe.get_onnx_audio(16000)
+                events = self.onnx_detector.predict(audio)
                 # Map ONNX events to FFB output (simple demo: use top score as rumble)
                 if events:
                     top_event, top_score = events[0]

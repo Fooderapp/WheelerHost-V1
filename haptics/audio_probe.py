@@ -55,6 +55,11 @@ def list_devices():
 
 
 class AudioProbe:
+    # For ONNX: ring buffer for recent audio (mono, 16kHz)
+    self._onnx_sr = 16000
+    self._onnx_bufsize = self._onnx_sr  # 1 second
+    self._onnx_buffer = np.zeros(self._onnx_bufsize, dtype=np.float32)
+    self._onnx_buf_pos = 0
     def __init__(self, samplerate: int = 48000, blocksize: int = 1024, device: int | None = None):
         self.enabled = (np is not None and sd is not None)
         self._sr = int(samplerate)
@@ -123,24 +128,44 @@ class AudioProbe:
         try:
             if self._stream is not None:
                 self._stream.stop(); self._stream.close()
-        except Exception:
-            pass
 
     def _cb(self, indata, frames, time_info, status):
         try:
             x = np.asarray(indata, dtype=np.float32)
             if x.ndim == 2:
                 x = x.mean(axis=1)
-            # Hann window
-            N = int(len(x))
-            if N <= 0: return
-            w = np.hanning(N).astype(np.float32)
-            xf = np.fft.rfft(x * w)
-            mag = np.abs(xf)
-            freqs = np.fft.rfftfreq(N, 1.0/self._sr)
-
-            # Bands
-            def band(a,b):
+            # Resample to 16kHz for ONNX (if needed)
+            if self._sr != self._onnx_sr:
+                # Simple downsample (not ideal, but works for short blocks)
+                factor = self._sr / self._onnx_sr
+                idx = (np.arange(0, len(x)) / factor).astype(int)
+                idx = idx[idx < len(x)]
+                x_16k = x[idx]
+            else:
+                x_16k = x
+            # Write to ONNX ring buffer
+            n = len(x_16k)
+            if n > 0:
+                end = self._onnx_buf_pos + n
+                if end <= self._onnx_bufsize:
+                    self._onnx_buffer[self._onnx_buf_pos:end] = x_16k
+                else:
+                    first = self._onnx_bufsize - self._onnx_buf_pos
+                    self._onnx_buffer[self._onnx_buf_pos:] = x_16k[:first]
+                    self._onnx_buffer[:n-first] = x_16k[first:]
+                self._onnx_buf_pos = (self._onnx_buf_pos + n) % self._onnx_bufsize
+    def get_onnx_audio(self, length=16000):
+        """Get the most recent 'length' samples (mono, 16kHz) for ONNX."""
+        with self._lock:
+            if length > self._onnx_bufsize:
+                length = self._onnx_bufsize
+            pos = self._onnx_buf_pos
+            if pos - length >= 0:
+                return np.copy(self._onnx_buffer[pos-length:pos])
+            else:
+                part1 = self._onnx_buffer[pos-length:]
+                part2 = self._onnx_buffer[:pos]
+                return np.concatenate((part1, part2))
                 i0 = int(a * N / self._sr)
                 i1 = int(b * N / self._sr)
                 m = mag[(freqs>=a) & (freqs<=b)]
@@ -230,8 +255,6 @@ class AudioProbe:
                     "engine": eng_o, "road": road_o,
                     "tactile": tactile_o, "tactHz": float(np.clip(self._tact_hz, 80.0, 230.0)),
                 }
-        except Exception:
-            pass
 
     def get(self) -> Dict[str, float]:
         with self._lock:
