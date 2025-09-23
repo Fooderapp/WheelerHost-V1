@@ -15,6 +15,10 @@ from PySide6 import QtWidgets, QtGui, QtCore
 from PySide6.QtCore import Qt
 
 from udp_server import UDPServer, LOG
+try:
+    from haptics.onnx_audio_event_detector import OnnxAudioEventDetector
+except Exception:
+    OnnxAudioEventDetector = None
 from overlay import Overlay
 try:
     from haptics.audio_probe import list_devices as list_audio_devices
@@ -87,6 +91,18 @@ class MainWindow(QtWidgets.QWidget):
         self.setWindowTitle("Wheeler — Windows (Single Client + Overlay)")
         self.resize(1180, 800)              # resizable by default
         self.setMinimumSize(900, 600)
+        # ONNX/classic FFB toggle (initialized here, added to layout below)
+        self.chkOnnxFfb = QtWidgets.QCheckBox("ONNX Audio FFB")
+        self.chkOnnxFfb.setChecked(False)
+        self.chkOnnxFfb.setEnabled(OnnxAudioEventDetector is not None)
+        self.onnx_detector = None
+        if OnnxAudioEventDetector is not None:
+            try:
+                self.onnx_detector = OnnxAudioEventDetector()
+            except Exception as e:
+                self.chkOnnxFfb.setEnabled(False)
+        self.use_onnx_ffb = False
+        self.chkOnnxFfb.toggled.connect(self._toggle_onnx_ffb)
 
         # Size grip for UX
         self._size_grip = QtWidgets.QSizeGrip(self)
@@ -123,16 +139,23 @@ class MainWindow(QtWidgets.QWidget):
         # FFB source label
         self.lblFfbSrc = QtWidgets.QLabel("FFB: –")
 
-        top.addWidget(self.lblLan)
-        top.addStretch(1)
-        top.addWidget(QtWidgets.QLabel("Pad:"))
-        top.addWidget(self.cmbPad)
-        top.addSpacing(8)
-        top.addWidget(self.lblFfbSrc)
-        top.addSpacing(8)
-        top.addWidget(self.chkFreezeSteer)
-        top.addWidget(self.chkEditOverlay)
-        top.addWidget(self.btnStart)
+    top.addWidget(self.lblLan)
+    top.addStretch(1)
+    top.addWidget(QtWidgets.QLabel("Pad:"))
+    top.addWidget(self.cmbPad)
+    top.addSpacing(8)
+    top.addWidget(self.lblFfbSrc)
+    top.addSpacing(8)
+    top.addWidget(self.chkFreezeSteer)
+    top.addWidget(self.chkEditOverlay)
+    top.addWidget(self.chkOnnxFfb)
+    top.addWidget(self.btnStart)
+    def _toggle_onnx_ffb(self, checked):
+        self.use_onnx_ffb = checked
+        if checked:
+            self.lblFfbSrc.setText("FFB: ONNX")
+        else:
+            self.lblFfbSrc.setText("FFB: AUDIO")
 
         # Left column: QR + Inputs
         leftCol = QtWidgets.QVBoxLayout()
@@ -334,15 +357,38 @@ class MainWindow(QtWidgets.QWidget):
         # Feed overlay
         self._for_each_overlay(lambda o: o.set_telemetry(x, latG))
 
-        # FFB source label
-        try:
-            s = str(src).lower() if isinstance(src, (str, bytes)) else ""
-            if   s == "real":  self.lblFfbSrc.setText("FFB: REAL")
-            elif s == "audio": self.lblFfbSrc.setText("FFB: AUDIO")
-            elif s == "synth": self.lblFfbSrc.setText("FFB: SYNTH")
-            else:               self.lblFfbSrc.setText("FFB: NONE")
-        except Exception:
-            pass
+        # ONNX/classic FFB logic
+        if self.use_onnx_ffb and self.onnx_detector is not None:
+            # Here you would get audio data from the audio input (not shown here)
+            # For demo, use zeros
+            import numpy as np
+            fake_audio = np.zeros(16000, dtype=np.float32)  # 1s of silence at 16kHz
+            try:
+                events = self.onnx_detector.predict(fake_audio)
+                # Map ONNX events to FFB output (simple demo: use top score as rumble)
+                if events:
+                    top_event, top_score = events[0]
+                    rumbleL = rumbleR = min(1.0, max(0.0, top_score))
+                    src = f"onnx:{top_event}"
+                    self.lblFfbSrc.setText(f"FFB: ONNX {top_event}")
+                else:
+                    rumbleL = rumbleR = 0.0
+                    src = "onnx:none"
+            except Exception as e:
+                rumbleL = rumbleR = 0.0
+                src = "onnx:error"
+                self.lblFfbSrc.setText("FFB: ONNX ERROR")
+        else:
+            # Fallback: classic label logic
+            try:
+                s = str(src).lower() if isinstance(src, (str, bytes)) else ""
+                if   s == "real":  self.lblFfbSrc.setText("FFB: REAL")
+                elif s == "audio": self.lblFfbSrc.setText("FFB: AUDIO")
+                elif s == "synth": self.lblFfbSrc.setText("FFB: SYNTH")
+                else:               self.lblFfbSrc.setText("FFB: NONE")
+            except Exception:
+                pass
+        # TODO: Send FFB to phone if needed (handled by UDPServer in backend)
 
     def onButtons(self, btns: dict):
         pass
