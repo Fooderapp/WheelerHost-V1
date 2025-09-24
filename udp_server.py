@@ -100,6 +100,7 @@ class UDPServer(QtCore.QObject):
         self._client: Optional[ClientState] = None
         self._locked = True
         self._idle_after_ms = 900
+        self._last_seq = 0
 
         # Bridge (prefer ViGEm; else vJoy if available)
         self._bridge = None
@@ -109,7 +110,7 @@ class UDPServer(QtCore.QObject):
         self._ffbR = 0.0
         self._ffb_ms = 0
         self._bridge.set_feedback_callback(self._on_ffb)
-        self._ffb_test_timer: Optional[QtCore.QTimer] = None
+        self._ffb_test_timer = None
 
         # Haptics: signal expander (maps 2‑ch FFB to richer features)
         self._hx = RumbleExpander() if RumbleExpander else None
@@ -247,7 +248,7 @@ class UDPServer(QtCore.QObject):
         env_syn = str(os.environ.get("WHEELER_SYNTH", "1")).strip().lower()
         self._synth_enabled = env_syn not in ("0","off","false","no")
         # Debug/status
-        self._last_error: Optional[str] = None
+        self._last_error = None
 
     def _on_ffb(self, L: float, R: float):
         self._ffbL = float(max(0.0, min(1.0, L)))
@@ -515,6 +516,7 @@ class UDPServer(QtCore.QObject):
                 ls_x     = to_float(axis.get("ls_x",       0.0))
                 ls_y     = to_float(axis.get("ls_y",       0.0))
                 seq      = to_int(obj.get("seq", 0))
+                self._last_seq = seq
 
                 # Buttons map → bools
                 names = ("A","B","X","Y","LB","RB","Start","Back","DPadUp","DPadDown","DPadLeft","DPadRight")
@@ -560,146 +562,15 @@ class UDPServer(QtCore.QObject):
                 audLoInt = 0.0; audLoHz = 0.0
                 audHiInt = 0.0; audHiHz = 0.0
                 if now_ms - self._ffb_ms <= 300:
-                    # Fresh real FFB from game
+                    # Fresh real FFB from game; use as-is (no audio blending)
                     rumbleL = float(self._ffbL)
                     rumbleR = float(self._ffbR)
                     src = "real"
-                    # Light blend-in of audio impact if available (kept subtle)
-                    try:
-                        helper_ok = (self._audio_helper is not None)
-                        probe_ok = (self._audio is not None)
-                        if (helper_ok or probe_ok) and not self._ffb_passthrough_only:
-                            feat_b = (self._audio_helper.get() if helper_ok else self._audio.get())
-                            imp_b = float(max(0.0, min(1.0, feat_b.get("impact", 0.0))))
-                            eng_b = float(max(0.0, min(1.0, feat_b.get("engine", 0.0))))
-                            road_b = float(max(0.0, min(1.0, feat_b.get("road", 0.0))))
-                            tact_b = float(max(0.0, min(1.0, feat_b.get("tactile", 0.0))))
-                            tact_hz = float(feat_b.get("tactHz", 0.0) or 0.0)
-                            skid_b = float(max(0.0, min(1.0, feat_b.get("skid", 0.0))))
-                            audInt, audHz, audLoInt, audLoHz, audHiInt, audHiHz = (
-                                self._compute_audio_bands(
-                                    road=road_b,
-                                    impact=imp_b,
-                                    tactile=tact_b,
-                                    tactile_hz=tact_hz,
-                                    engine=eng_b,
-                                    skid=skid_b,
-                                )
-                            )
-                            if imp_b > 0.08:
-                                boost = min(0.25, 0.20 * self._aud_intensity) * imp_b
-                                rumbleL = max(0.0, min(1.0, rumbleL + boost))
-                                rumbleR = max(0.0, min(1.0, rumbleR + boost))
-                    except Exception:
-                        pass
-                    # No bed/mask/hybrid modifications — pass as-is
                 else:
-                    # No fresh real FFB
-                    # Prefer helper if available; else use internal probe
-                    helper_ok = (self._audio_helper is not None)
-                    probe_ok = (self._audio is not None)
-                    if self._ffb_passthrough_only or (not helper_ok and not probe_ok):
-                        rumbleL = 0.0
-                        rumbleR = 0.0
-                        src = "none"
-                    else:
-                        try:
-                            feat = (self._audio_helper.get() if helper_ok else self._audio.get())
-                            # Map audio features to rumble: use bodyL/bodyR and a dash of impact
-                            bodyL = float(max(0.0, min(1.0, feat.get("bodyL", 0.0))))
-                            bodyR = float(max(0.0, min(1.0, feat.get("bodyR", 0.0))))
-                            imp   = float(max(0.0, min(1.0, feat.get("impact", 0.0))))
-                            tact  = float(max(0.0, min(1.0, feat.get("tactile", 0.0))))
-                            tactHz= float(feat.get("tactHz", 0.0) or 0.0)
-                            # pre-rumble from features
-                            rL0 = max(bodyL, 0.35 * imp)
-                            rR0 = max(bodyR, 0.45 * imp)
-                            energy = max(rL0, rR0)
-                            eng_val = float(max(0.0, min(1.0, feat.get("engine", energy))))
-                            road_est = float(max(0.0, min(1.0, feat.get("road", max(bodyL, bodyR) - 0.5*eng_val))))
-                            # Engine as background: reduce amplitude when engine dominates strongly
-                            if eng_val > road_est + 0.12:
-                                k = max(0.25, 0.35 + 0.40 * road_est)  # 0.35..0.75
-                                rL0 *= k; rR0 *= k
-                            # Gate/hysteresis
-                            if not self._aud_gate_on:
-                                if energy >= self._aud_on_thresh or imp >= 0.12:
-                                    self._aud_gate_on = True
-                                    self._aud_gate_ton_ms = now_ms
-                                    # start a new pulse train immediately; pulses are short non-zero rumble bursts
-                                    self._aud_pulse_next_ms = now_ms
-                                    rumbleL, rumbleR = 0.0, 0.0
-                                else:
-                                    rumbleL, rumbleR = 0.0, 0.0
-                            else:
-                                if (now_ms - self._aud_gate_ton_ms) > self._aud_max_burst_ms and energy <= self._aud_off_thresh:
-                                    self._aud_gate_on = False
-                                    rumbleL, rumbleR = 0.0, 0.0
-                                elif energy <= self._aud_off_thresh and imp < 0.10:
-                                    self._aud_gate_on = False
-                                    rumbleL, rumbleR = 0.0, 0.0
-                                else:
-                                    # Dual-band pulses: low (engine) and high (road)
-                                    e_lo = eng_val
-                                    e_hi = road_est
-                                    hz_lo = 6.0 + 12.0 * (e_lo ** 0.85)   # ~6..18 Hz
-                                    hz_hi = 14.0 + 18.0 * (e_hi ** 0.85)  # ~14..32 Hz
-                                    per_lo = int(max(40.0, min(250.0, 1000.0 / hz_lo)))
-                                    per_hi = int(max(30.0, min(200.0, 1000.0 / hz_hi)))
-                                    self._aud_lo_w_ms = int(18 + 10 * e_lo)
-                                    self._aud_hi_w_ms = int(16 + 10 * e_hi)
-                                    # schedule windows with jitter
-                                    def in_win(t0, per, wid):
-                                        t = t0
-                                        while now_ms - t > per:
-                                            t += per
-                                        jitter = int(0.10 * per)
-                                        if jitter > 0:
-                                            jseed = (now_ms // 41) % 9
-                                            joff = (int(jseed) - 4) * (jitter // 3)
-                                            t += joff
-                                        return (now_ms - t) <= wid
-                                    if self._aud_lo_next_ms <= 0:
-                                        self._aud_lo_next_ms = now_ms
-                                    if self._aud_hi_next_ms <= 0:
-                                        self._aud_hi_next_ms = now_ms
-                                    on_lo = in_win(self._aud_lo_next_ms, per_lo, self._aud_lo_w_ms)
-                                    on_hi = in_win(self._aud_hi_next_ms, per_hi, self._aud_hi_w_ms)
-                                    ampL = 0.0; ampR = 0.0
-                                    if on_lo:
-                                        ampL = max(ampL, rL0 * (0.50 + 0.50 * e_lo))
-                                        ampR = max(ampR, rR0 * (0.50 + 0.50 * e_lo))
-                                    if on_hi:
-                                        ampL = max(ampL, rL0 * (0.60 + 0.40 * e_hi))
-                                        ampR = max(ampR, rR0 * (0.60 + 0.40 * e_hi))
-                                    # Do not forward audio pulses as L/R rumble; phone uses audInt/audHz for impulses
-                                    rumbleL = 0.0
-                                    rumbleR = 0.0
-                            # Equalizer metrics for phone overlay and mobile haptics
-                            skid_b = float(max(0.0, min(1.0, feat.get("skid", 0.0))))
-                            audInt, audHz, audLoInt, audLoHz, audHiInt, audHiHz = (
-                                self._compute_audio_bands(
-                                    road=road_est,
-                                    impact=imp,
-                                    tactile=tact,
-                                    tactile_hz=tactHz,
-                                    engine=eng_val,
-                                    skid=skid_b,
-                                )
-                            )
-                            src = "audio"
-                            # Occasional log for audio rumble to aid debugging
-                            if now_ms - self._audio_last_log_ms > 800:
-                                devlabel = self._audio_helper.device_name() if helper_ok else ("Auto (sounddevice)" if probe_ok else "")
-                                LOG.log(f"🔊 AUDIO rumble L={rumbleL:.2f} R={rumbleR:.2f} gate={'ON' if self._aud_gate_on else 'OFF'} dev={devlabel}")
-                                self._audio_last_log_ms = now_ms
-                                if devlabel:
-                                    try:
-                                        self.audio_status_changed.emit(f"Active — {devlabel}")
-                                    except Exception:
-                                        pass
-                        except Exception:
-                            rumbleL = 0.0; rumbleR = 0.0; src = "none"
+                    # No fresh real FFB: do not synthesize from audio; leave rumble off
+                    rumbleL = 0.0
+                    rumbleR = 0.0
+                    src = "none"
 
                 # Haptics expander (derive impact/trigger cues for phone)
                 impact = 0.0; trigL_out = 0.0; trigR_out = 0.0
@@ -771,6 +642,11 @@ class UDPServer(QtCore.QObject):
                     sock.sendto(json.dumps(reply).encode("utf-8"), addr)
                 except Exception:
                     pass
+                else:
+                    # occasional log to confirm outbound replies
+                    if now_ms - getattr(self, '_last_reply_log_ms', 0) > 1200:
+                        LOG.log(f"📤 Reply sent ack={reply.get('ack')} rumbleL={reply.get('rumbleL'):.2f} rumbleR={reply.get('rumbleR'):.2f} audInt={reply.get('audInt'):.2f} audHz={reply.get('audHz'):.1f}")
+                        self._last_reply_log_ms = now_ms
 
             except json.JSONDecodeError:
                 continue
@@ -821,6 +697,11 @@ class UDPServer(QtCore.QObject):
                 "center": 0.0, "centerDeg": 0.0,
                 "resistance": 1.0, "note": "test"
             }
+            # Try to mimic a real reply by using the last seq if available
+            try:
+                pkt["ack"] = int(getattr(self, '_last_seq', 0) or 0)
+            except Exception:
+                pass
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.sendto(json.dumps(pkt).encode("utf-8"), addr)
             s.close()
