@@ -4,11 +4,23 @@ Uses a pre-trained YAMNet ONNX model (YAMNet) for audio event classification.
 Robust to Python lists vs numpy arrays and auto-pads/trims to 1s at 16kHz.
 """
 import os
-import numpy as np
-import onnxruntime as ort
+try:
+    import numpy as np
+except Exception as e:
+    np = None  # type: ignore
+    _np_err = e
+try:
+    import onnxruntime as ort
+except Exception as e:
+    ort = None  # type: ignore
+    _ort_err = e
 
 class OnnxAudioEventDetector:
     def __init__(self, model_path=None):
+        if np is None:
+            raise RuntimeError(f"numpy not available: {_np_err}")
+        if ort is None:
+            raise RuntimeError(f"onnxruntime not available: {_ort_err}")
         if model_path is None:
             model_path = os.path.join(os.path.dirname(__file__), '../models/yamnet.onnx')
         self.model_path = os.path.abspath(model_path)

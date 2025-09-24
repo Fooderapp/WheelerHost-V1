@@ -1,4 +1,10 @@
-﻿# udp_server.py
+﻿    # --- test haptics injection ---
+    def force_test_haptics(self, duration_sec=3):
+        """Forcibly inject strong haptics into every reply for duration_sec seconds."""
+        self._force_haptics_until = time.time() + duration_sec
+        LOG.log(f"🧪 Forcing test haptics for {duration_sec}s")
+
+# udp_server.py
 # Single-client UDP server -> ViGEmBridge (Windows).
 # Real rumble (FFB) flows back from the game via ViGEmBridge and is returned to the phone.
 
@@ -618,6 +624,20 @@ class UDPServer(QtCore.QObject):
                     audLoHz = patterns.get('audLowHz', audLoHz)
                     audHiInt = patterns.get('audHighInt', audHiInt)
                     audHiHz = patterns.get('audHighHz', audHiHz)
+
+                # Force test haptics if enabled
+                if hasattr(self, '_force_haptics_until') and time.time() < getattr(self, '_force_haptics_until', 0):
+                    rumbleL = 0.85
+                    rumbleR = 0.85
+                    impact = 0.9
+                    trigL_out = 0.7
+                    trigR_out = 0.7
+                    audInt = 0.8
+                    audHz = 120.0
+                    audLoInt = 0.7
+                    audLoHz = 90.0
+                    audHiInt = 0.6
+                    audHiHz = 180.0
 
                 # Reply to phone (includes ONNX or classic haptics)
                 reply = {

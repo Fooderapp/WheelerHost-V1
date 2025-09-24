@@ -202,7 +202,18 @@ class MainWindow(QtWidgets.QWidget):
             self.cmbAudio.addItem(str(label), idx)
         ga.addWidget(QtWidgets.QLabel("Audio device"), 0, 0); ga.addWidget(self.cmbAudio, 0, 1)
         self.lblAudioStatus = QtWidgets.QLabel("Audio: Inactive"); ga.addWidget(self.lblAudioStatus, 0, 2)
-        self.chkOnnxFfb = QtWidgets.QCheckBox("Use ONNX/YAMNet FFB"); self.chkOnnxFfb.setChecked(True)
+        self.chkOnnxFfb = QtWidgets.QCheckBox("Use ONNX/YAMNet FFB")
+        # Default ONNX based on availability (numpy, onnxruntime, model file)
+        try:
+            import importlib, os
+            has_np = importlib.util.find_spec('numpy') is not None
+            has_ort = importlib.util.find_spec('onnxruntime') is not None
+            model_path = os.path.join(os.path.dirname(__file__), 'models', 'yamnet.onnx')
+            has_model = os.path.isfile(model_path)
+            default_onnx = bool(has_np and has_ort and has_model)
+        except Exception:
+            default_onnx = False
+        self.chkOnnxFfb.setChecked(default_onnx)
         ga.addWidget(self.chkOnnxFfb, 0, 3)
         self.sldRoad = QtWidgets.QSlider(Qt.Horizontal); self.sldRoad.setRange(0, 200); self.sldRoad.setValue(100)
         self.sldEng  = QtWidgets.QSlider(Qt.Horizontal); self.sldEng.setRange(0, 200);  self.sldEng.setValue(100)
@@ -226,12 +237,21 @@ class MainWindow(QtWidgets.QWidget):
         boxDbg = QtWidgets.QGroupBox("Debug & Status")
         gd = QtWidgets.QGridLayout(boxDbg); gd.setHorizontalSpacing(12); gd.setVerticalSpacing(6)
         self.lblServerStatus = QtWidgets.QLabel("Server: —")
-        self.btnSendTestHaptics = QtWidgets.QPushButton("Send Test Haptics")
-        self.btnSendTestHaptics.clicked.connect(self._send_test_haptics)
+    self.btnSendTestHaptics = QtWidgets.QPushButton("Send Test Haptics")
+    self.btnSendTestHaptics.clicked.connect(self._send_test_haptics)
+    self.btnForceTestHaptics = QtWidgets.QPushButton("Force Test Haptics (3s)")
+    self.btnForceTestHaptics.clicked.connect(self._force_test_haptics)
         self.btnRefreshStatus = QtWidgets.QPushButton("Refresh")
         self.btnRefreshStatus.clicked.connect(self._update_server_status)
         gd.addWidget(QtWidgets.QLabel("Status"), 0, 0); gd.addWidget(self.lblServerStatus, 0, 1, 1, 2)
-        gd.addWidget(self.btnSendTestHaptics, 1, 1); gd.addWidget(self.btnRefreshStatus, 1, 2)
+    gd.addWidget(self.btnSendTestHaptics, 1, 1); gd.addWidget(self.btnRefreshStatus, 1, 2)
+    gd.addWidget(self.btnForceTestHaptics, 2, 1, 1, 2)
+    def _force_test_haptics(self):
+        try:
+            self.server.force_test_haptics(3)
+            self._appendLog("[local] Forcing test haptics for 3s\n")
+        except Exception as e:
+            self._appendLog(f"[local] Force test haptics failed: {e}\n")
         self.rightCol.addWidget(boxDbg)
 
         # ONNX FFB state and detector
@@ -288,6 +308,25 @@ class MainWindow(QtWidgets.QWidget):
         # Initialize ONNX if default ON
         if self.chkOnnxFfb.isChecked():
             self._toggle_onnx_ffb(True)
+        else:
+            # Show why disabled (if missing deps)
+            try:
+                import importlib, os
+                has_np = importlib.util.find_spec('numpy') is not None
+                has_ort = importlib.util.find_spec('onnxruntime') is not None
+                model_path = os.path.join(os.path.dirname(__file__), 'models', 'yamnet.onnx')
+                has_model = os.path.isfile(model_path)
+                missing = []
+                if not has_np: missing.append('numpy')
+                if not has_ort: missing.append('onnxruntime')
+                if not has_model: missing.append('yamnet.onnx')
+                if missing:
+                    self.lblAudioStatus.setText(f"Audio: ONNX disabled (missing {', '.join(missing)})")
+                else:
+                    self.lblAudioStatus.setText("Audio: Classic")
+                self.lblFfbSrc.setText("FFB: Classic")
+            except Exception:
+                pass
 
         # Periodic server status updates
         self._status_timer = QtCore.QTimer(self)
@@ -326,8 +365,14 @@ class MainWindow(QtWidgets.QWidget):
                 self.lblFfbSrc.setText("FFB: ONNX")
             except Exception as e:
                 self.use_onnx_ffb = False
-                self.lblAudioStatus.setText(f"ONNX failed: {str(e)[:30]}")
-                self.lblFfbSrc.setText("FFB: Classic (ONNX failed)")
+                # Auto-uncheck if enabling failed (e.g., numpy/onnxruntime missing)
+                try:
+                    self.chkOnnxFfb.blockSignals(True)
+                    self.chkOnnxFfb.setChecked(False)
+                finally:
+                    self.chkOnnxFfb.blockSignals(False)
+                self.lblAudioStatus.setText(f"Audio: ONNX disabled ({str(e)[:60]})")
+                self.lblFfbSrc.setText("FFB: Classic")
                 print(f"✗ ONNX FFB initialization failed: {e}")
                 self.onnx_detector = None
                 self.audio_probe = None
