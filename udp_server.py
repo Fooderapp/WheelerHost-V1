@@ -722,7 +722,22 @@ class UDPServer(QtCore.QObject):
                 self.telemetry.emit(x_proc, throttle, brake, latG, seq, rumbleL, rumbleR, src)
                 self.buttons.emit(btns)
 
-                # Reply to phone (includes real rumble)
+                # ONNX haptic pattern override (if available)
+                if hasattr(self, '_onnx_patterns') and self._onnx_patterns:
+                    patterns = self._onnx_patterns
+                    rumbleL = patterns.get('rumbleL', rumbleL)
+                    rumbleR = patterns.get('rumbleR', rumbleR)
+                    impact = patterns.get('impact', impact)
+                    trigL_out = patterns.get('trigL', trigL_out)
+                    trigR_out = patterns.get('trigR', trigR_out)
+                    audInt = patterns.get('audInt', audInt)
+                    audHz = patterns.get('audHz', audHz)
+                    audLoInt = patterns.get('audLowInt', audLoInt)
+                    audLoHz = patterns.get('audLowHz', audLoHz)
+                    audHiInt = patterns.get('audHighInt', audHiInt)
+                    audHiHz = patterns.get('audHighHz', audHiHz)
+
+                # Reply to phone (includes ONNX or classic haptics)
                 reply = {
                     "ack": seq, "status":"ok",
                     "rumble": max(rumbleL, rumbleR),

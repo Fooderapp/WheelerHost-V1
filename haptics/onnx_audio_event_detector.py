@@ -19,22 +19,35 @@ class OnnxAudioEventDetector:
         self.class_map = self._load_class_map()
 
     def _load_class_map(self):
-        # YAMNet class map: 521 classes, can be found in yamnet_class_map.csv
-        # For demo, use a minimal hardcoded map for key FFB categories
+        # YAMNet class map: expanded for racing/driving haptic feedback
         return {
-            0: 'Speech',
-            7: 'Music',
-            8: 'Vehicle',
-            9: 'Car',
-            10: 'Engine',
-            14: 'Skidding',
-            15: 'Tire squeal',
-            16: 'Crash',
-            17: 'Bang',
-            18: 'Impact',
-            19: 'Road',
-            20: 'Wind',
-            # ... (expand as needed)
+            # Core vehicle/driving sounds
+            8: 'Vehicle', 9: 'Car', 10: 'Engine', 11: 'Motor_vehicle',
+            12: 'Motorcycle', 13: 'Bus', 336: 'Car_passing_by',
+            
+            # Tire/road sounds
+            14: 'Skidding', 15: 'Tire_squeal', 19: 'Road_vehicle',
+            423: 'Tire_on_gravel', 424: 'Road_surface',
+            
+            # Impact/crash sounds  
+            16: 'Crash', 17: 'Bang', 18: 'Impact', 137: 'Slam',
+            138: 'Thump', 139: 'Thud', 376: 'Breaking',
+            
+            # Environmental
+            20: 'Wind', 21: 'Rustling', 22: 'Wind_noise',
+            
+            # Audio categories
+            0: 'Speech', 7: 'Music', 137: 'Noise',
+            
+            # Additional vehicle-related
+            425: 'Acceleration', 426: 'Deceleration', 427: 'Braking',
+            428: 'Gear_shift', 429: 'Exhaust', 430: 'Turbo',
+            
+            # Surface types
+            431: 'Gravel', 432: 'Dirt', 433: 'Asphalt', 434: 'Concrete',
+            
+            # Weather/conditions
+            435: 'Rain_on_surface', 436: 'Wet_road', 437: 'Puddle_splash',
         }
 
     def predict(self, audio_mono_16k: np.ndarray):

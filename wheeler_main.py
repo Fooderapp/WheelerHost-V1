@@ -82,6 +82,55 @@ class QRPane(QtWidgets.QScrollArea):
 
 # --------- Main Window ----------
 class MainWindow(QtWidgets.QWidget):
+    def _generate_haptic_patterns(self, events):
+        """
+        Map ONNX events to rich haptic patterns for phone telemetry.
+        Returns a dict with keys: impact, trigL, trigR, audInt, audHz, audLowInt, audLowHz, audHighInt, audHighHz, rumbleL, rumbleR
+        """
+        # Default: all off
+        patterns = {
+            'impact': 0.0, 'trigL': 0.0, 'trigR': 0.0,
+            'audInt': 0.0, 'audHz': 0.0,
+            'audLowInt': 0.0, 'audLowHz': 0.0,
+            'audHighInt': 0.0, 'audHighHz': 0.0,
+            'rumbleL': 0.0, 'rumbleR': 0.0
+        }
+        for name, conf in events:
+            n = name.lower()
+            if conf < 0.12:
+                continue
+            if 'skid' in n or 'tire squeal' in n:
+                # Skid: high Hz, fast, sharp
+                patterns['audHighInt'] = max(patterns['audHighInt'], min(1.0, conf * 1.2))
+                patterns['audHighHz'] = 180.0 + 40.0 * conf
+                patterns['trigR'] = max(patterns['trigR'], conf)
+            elif 'road' in n or 'dirt' in n:
+                # Road/dirt: rough, mid Hz
+                patterns['audLowInt'] = max(patterns['audLowInt'], min(1.0, conf))
+                patterns['audLowHz'] = 32.0 + 12.0 * conf
+                patterns['rumbleL'] = max(patterns['rumbleL'], conf * 0.5)
+                patterns['rumbleR'] = max(patterns['rumbleR'], conf * 0.5)
+            elif 'impact' in n or 'crash' in n or 'bang' in n:
+                # Impact/crash: strong hit
+                patterns['impact'] = max(patterns['impact'], min(1.0, conf * 1.5))
+                patterns['trigL'] = max(patterns['trigL'], conf)
+                patterns['trigR'] = max(patterns['trigR'], conf)
+            elif 'engine' in n or 'motor' in n:
+                # Engine: low Hz rumble
+                patterns['audLowInt'] = max(patterns['audLowInt'], min(1.0, conf * 0.7))
+                patterns['audLowHz'] = 24.0 + 20.0 * conf
+                patterns['rumbleL'] = max(patterns['rumbleL'], conf * 0.4)
+                patterns['rumbleR'] = max(patterns['rumbleR'], conf * 0.4)
+            elif 'music' in n:
+                # Music: suppress haptics
+                for k in patterns:
+                    patterns[k] *= 0.5
+        return patterns
+
+    def _send_onnx_haptics(self, patterns):
+        """Inject ONNX haptic patterns into the UDP server for phone output."""
+        if hasattr(self, 'server') and self.server:
+            setattr(self.server, '_onnx_patterns', patterns)
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Wheeler — Windows (Single Client + Overlay)")
@@ -367,26 +416,23 @@ class MainWindow(QtWidgets.QWidget):
         # Feed overlay
         self._for_each_overlay(lambda o: o.set_telemetry(x, latG))
 
-        # ONNX FFB path
+        # ONNX FFB path - rich haptic pattern generation from sound events
         if getattr(self, 'use_onnx_ffb', False) and self.onnx_detector and self.audio_probe:
             try:
                 audio = self.audio_probe.get_onnx_audio()
                 if audio is not None:
                     events = self.onnx_detector.predict(audio)
-                    # Events is now a list of (event_name, confidence) tuples
-                    event_names = [name.lower() for name, conf in events]
-                    # Map sound events to rumble based on detected events
-                    rumbleL = 0.0
-                    rumbleR = 0.0
-                    for name, confidence in events[:3]:  # Use top 3 events
-                        if confidence > 0.1:  # Only use confident predictions
-                            name_lower = name.lower()
-                            if any(keyword in name_lower for keyword in ['engine', 'motor', 'car']):
-                                rumbleL += confidence * 0.5
-                            if any(keyword in name_lower for keyword in ['road', 'tire', 'skid']):
-                                rumbleR += confidence * 0.5
-                    # Send to server/backend as needed
-                    self.lblFfbSrc.setText(f"FFB: ONNX ({len([e for e in events if e[1] > 0.1])} events)")
+                    
+                    # Generate rich haptic patterns based on sound events
+                    haptic_patterns = self._generate_haptic_patterns(events)
+                    
+                    # Send complete haptic telemetry to phone
+                    if haptic_patterns:
+                        self._send_onnx_haptics(haptic_patterns)
+                        active_events = [name for name, conf in events if conf > 0.1]
+                        self.lblFfbSrc.setText(f"FFB: ONNX ({len(active_events)} events: {', '.join(active_events[:2])})")
+                    else:
+                        self.lblFfbSrc.setText("FFB: ONNX (no events)")
             except Exception as e:
                 self.lblAudioStatus.setText(f"ONNX error: {e}")
         else:
@@ -409,6 +455,92 @@ class MainWindow(QtWidgets.QWidget):
     def onClientsChanged(self, items):
         self.lstClients.clear()
         self.lstClients.addItems(items)
+
+    # ----- ONNX haptic pattern generation -----
+    def _generate_haptic_patterns(self, events):
+        """Generate rich haptic patterns based on ONNX sound event detection."""
+        import time, math
+        
+        patterns = {
+            'rumbleL': 0.0, 'rumbleR': 0.0,
+            'impact': 0.0,
+            'trigL': 0.0, 'trigR': 0.0,
+            'audInt': 0.0, 'audHz': 120.0,
+            'audLowInt': 0.0, 'audLowHz': 60.0,
+            'audHighInt': 0.0, 'audHighHz': 200.0,
+        }
+        
+        # Current time for pattern generation
+        t = time.time()
+        
+        for name, confidence in events:
+            if confidence < 0.08:  # Skip weak predictions
+                continue
+                
+            name_lower = name.lower()
+            
+            # Engine sounds - Low frequency rumble
+            if any(keyword in name_lower for keyword in ['engine', 'motor', 'car', 'vehicle']):
+                patterns['rumbleL'] += confidence * 0.7
+                patterns['audLowInt'] += confidence * 0.8
+                patterns['audLowHz'] = 45.0 + confidence * 30.0  # 45-75 Hz
+            
+            # Skidding/Tire squeal - High frequency, fast pulses
+            elif any(keyword in name_lower for keyword in ['skid', 'squeal', 'tire', 'brake']):
+                # Fast pulsing pattern for skid
+                pulse = (math.sin(t * 40) + 1) * 0.5  # 20Hz pulse
+                patterns['rumbleR'] += confidence * pulse * 0.9
+                patterns['audHighInt'] += confidence * 0.9
+                patterns['audHighHz'] = 180.0 + confidence * 50.0  # 180-230 Hz
+                patterns['trigR'] += confidence * 0.6
+            
+            # Road/Surface noise - Textured, medium frequency
+            elif any(keyword in name_lower for keyword in ['road', 'surface', 'gravel', 'dirt']):
+                # Textured pattern for road surface
+                texture = (math.sin(t * 15) * 0.3 + math.sin(t * 23) * 0.2 + 0.5) * 0.5
+                patterns['rumbleL'] += confidence * texture * 0.6
+                patterns['rumbleR'] += confidence * texture * 0.4
+                patterns['audInt'] += confidence * 0.7
+                patterns['audHz'] = 90.0 + confidence * 40.0  # 90-130 Hz
+            
+            # Impact/Crash - Strong hit-like feedback
+            elif any(keyword in name_lower for keyword in ['crash', 'bang', 'impact', 'hit']):
+                patterns['impact'] += confidence * 1.0
+                patterns['trigL'] += confidence * 0.8
+                patterns['trigR'] += confidence * 0.8
+                patterns['rumbleL'] += confidence * 0.9
+                patterns['rumbleR'] += confidence * 0.9
+                patterns['audInt'] += confidence * 1.0
+                patterns['audHz'] = 150.0  # Sharp impact frequency
+            
+            # Wind - Subtle high frequency
+            elif any(keyword in name_lower for keyword in ['wind', 'air']):
+                patterns['audHighInt'] += confidence * 0.4
+                patterns['audHighHz'] = 160.0 + confidence * 80.0  # 160-240 Hz
+                patterns['rumbleR'] += confidence * 0.3
+        
+        # Clamp all values to valid ranges
+        for key in patterns:
+            if 'Hz' in key:
+                patterns[key] = max(20.0, min(300.0, patterns[key]))
+            else:
+                patterns[key] = max(0.0, min(1.0, patterns[key]))
+        
+        return patterns if any(v > 0.05 for k, v in patterns.items() if 'Hz' not in k) else None
+    
+    def _send_onnx_haptics(self, patterns):
+        """Send ONNX-generated haptic patterns to the phone via UDP server override."""
+        import time
+        
+        # Override FFB values in server to inject ONNX haptics
+        self.server._ffbL = patterns['rumbleL']
+        self.server._ffbR = patterns['rumbleR']
+        self.server._ffb_ms = int(time.time() * 1000)  # Mark as fresh FFB
+        
+        # Store patterns for potential future use in server modifications
+        if not hasattr(self.server, '_onnx_patterns'):
+            self.server._onnx_patterns = {}
+        self.server._onnx_patterns.update(patterns)
 
     # ----- helper -----
     def _for_each_overlay(self, fn):
