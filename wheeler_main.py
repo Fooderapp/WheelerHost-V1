@@ -237,22 +237,23 @@ class MainWindow(QtWidgets.QWidget):
         boxDbg = QtWidgets.QGroupBox("Debug & Status")
         gd = QtWidgets.QGridLayout(boxDbg); gd.setHorizontalSpacing(12); gd.setVerticalSpacing(6)
         self.lblServerStatus = QtWidgets.QLabel("Server: —")
-    self.btnSendTestHaptics = QtWidgets.QPushButton("Send Test Haptics")
-    self.btnSendTestHaptics.clicked.connect(self._send_test_haptics)
-    self.btnForceTestHaptics = QtWidgets.QPushButton("Force Test Haptics (3s)")
-    self.btnForceTestHaptics.clicked.connect(self._force_test_haptics)
+        self.btnSendTestHaptics = QtWidgets.QPushButton("Send Test Haptics")
+        self.btnSendTestHaptics.clicked.connect(self._send_test_haptics)
+        self.btnForceTestHaptics = QtWidgets.QPushButton("Force Test Haptics (3s)")
+        self.btnForceTestHaptics.clicked.connect(self._force_test_haptics)
         self.btnRefreshStatus = QtWidgets.QPushButton("Refresh")
         self.btnRefreshStatus.clicked.connect(self._update_server_status)
         gd.addWidget(QtWidgets.QLabel("Status"), 0, 0); gd.addWidget(self.lblServerStatus, 0, 1, 1, 2)
-    gd.addWidget(self.btnSendTestHaptics, 1, 1); gd.addWidget(self.btnRefreshStatus, 1, 2)
-    gd.addWidget(self.btnForceTestHaptics, 2, 1, 1, 2)
+        gd.addWidget(self.btnSendTestHaptics, 1, 1); gd.addWidget(self.btnRefreshStatus, 1, 2)
+        gd.addWidget(self.btnForceTestHaptics, 2, 1, 1, 2)
+        self.rightCol.addWidget(boxDbg)
+
     def _force_test_haptics(self):
         try:
             self.server.force_test_haptics(3)
             self._appendLog("[local] Forcing test haptics for 3s\n")
         except Exception as e:
             self._appendLog(f"[local] Force test haptics failed: {e}\n")
-        self.rightCol.addWidget(boxDbg)
 
         # ONNX FFB state and detector
         self.use_onnx_ffb = False

@@ -1,26 +1,15 @@
-﻿    # --- test haptics injection ---
-    def force_test_haptics(self, duration_sec=3):
-        """Forcibly inject strong haptics into every reply for duration_sec seconds."""
-        self._force_haptics_until = time.time() + duration_sec
-        LOG.log(f"🧪 Forcing test haptics for {duration_sec}s")
-
+﻿
 # udp_server.py
 # Single-client UDP server -> ViGEmBridge (Windows).
 # Real rumble (FFB) flows back from the game via ViGEmBridge and is returned to the phone.
-
-import socket, threading, time, datetime, platform, struct, json, os, sys
-# Ensure this repo root is on sys.path when launched from another CWD (Windows)
-try:
-    _HERE = os.path.dirname(__file__)
-    if _HERE and _HERE not in sys.path:
-        sys.path.insert(0, _HERE)
-except Exception:
-    pass
+# PySide6 and typing/dataclasses imports for signals and type annotations
+from PySide6 import QtCore
 from dataclasses import dataclass
 from typing import Optional, Tuple, Dict
-from PySide6 import QtCore
+import socket, threading, time, datetime, platform, struct, json, os, sys
+# Ensure this repo root is on sys.path when launched from another CWD (Windows)
 
-from vigem_bridge import ViGEmBridge, XGamepad
+
 try:
     from haptics.rumble_expander import RumbleExpander
 except Exception:
@@ -50,12 +39,15 @@ try:
     from dk_bridge_proc import DKBridgeProc  # optional (macOS DriverKit bridge helper)
 except Exception:
     DKBridgeProc = None  # type: ignore
-
+try:
+    from vigem_bridge import ViGEmBridge, XGamepad
+except Exception:
+    ViGEmBridge = None  # type: ignore
+    XGamepad = None  # type: ignore
 try:
     from macos_gamepad_bridge import MacOSGamepadBridge  # cross-platform
 except Exception:
     MacOSGamepadBridge = None  # type: ignore
-
 try:
     from driverkit_gamepad_bridge import DriverKitGamepadBridge  # macOS DriverKit
 except Exception:
@@ -91,6 +83,10 @@ class ClientState:
     neutral_sent: bool = False
 
 class UDPServer(QtCore.QObject):
+    def force_test_haptics(self, duration_sec=3):
+        """Forcibly inject strong haptics into every reply for duration_sec seconds."""
+        self._force_haptics_until = time.time() + duration_sec
+        LOG.log(f"🧪 Forcing test haptics for {duration_sec}s")
     telemetry = QtCore.Signal(float, float, float, float, object, float, float, str)  # x,thr,brk,latG,seq,L,R,src
     buttons   = QtCore.Signal(dict)
     tuning    = QtCore.Signal(dict)
