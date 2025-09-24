@@ -55,12 +55,15 @@ def list_devices():
 
 
 class AudioProbe:
-    # For ONNX: ring buffer for recent audio (mono, 16kHz)
-    self._onnx_sr = 16000
-    self._onnx_bufsize = self._onnx_sr  # 1 second
-    self._onnx_buffer = np.zeros(self._onnx_bufsize, dtype=np.float32)
-    self._onnx_buf_pos = 0
     def __init__(self, samplerate: int = 48000, blocksize: int = 1024, device: int | None = None):
+        # For ONNX: ring buffer for recent audio (mono, 16kHz)
+        self._onnx_sr = 16000
+        self._onnx_bufsize = self._onnx_sr  # 1 second
+        if np is not None:
+            self._onnx_buffer = np.zeros(self._onnx_bufsize, dtype=np.float32)
+        else:
+            self._onnx_buffer = None
+        self._onnx_buf_pos = 0
         self.enabled = (np is not None and sd is not None)
         self._sr = int(samplerate)
         self._bs = int(blocksize)
@@ -128,6 +131,8 @@ class AudioProbe:
         try:
             if self._stream is not None:
                 self._stream.stop(); self._stream.close()
+        except Exception:
+            pass
 
     def _cb(self, indata, frames, time_info, status):
         try:
@@ -154,6 +159,8 @@ class AudioProbe:
                     self._onnx_buffer[self._onnx_buf_pos:] = x_16k[:first]
                     self._onnx_buffer[:n-first] = x_16k[first:]
                 self._onnx_buf_pos = (self._onnx_buf_pos + n) % self._onnx_bufsize
+        except Exception:
+            pass
     def get_onnx_audio(self, length=16000):
         """Get the most recent 'length' samples (mono, 16kHz) for ONNX."""
         with self._lock:

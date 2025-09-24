@@ -1,5 +1,5 @@
-﻿# Minor non-functional change for commit: clarifying comment for version tracking
-# wheeler_main.py...
+﻿
+# wheeler_main.py
 # Resizable main window + overlay + UDP server (single-client lock).
 # Hotkeys: F9 toggle overlay, F11 reset overlay.
 
@@ -15,16 +15,11 @@ from PySide6 import QtWidgets, QtGui, QtCore
 from PySide6.QtCore import Qt
 
 from udp_server import UDPServer, LOG
-try:
-    from haptics.onnx_audio_event_detector import OnnxAudioEventDetector
-except Exception:
-    OnnxAudioEventDetector = None
 from overlay import Overlay
 try:
-    from haptics.audio_probe import list_devices as list_audio_devices, AudioProbe
+    from haptics.audio_probe import list_devices as list_audio_devices
 except Exception:
     list_audio_devices = None
-    AudioProbe = None
 
 # --------- QR Pane (shows QR for udp://IP:PORT but caption is IP:PORT only) ----------
 import io, socket, qrcode
@@ -87,26 +82,11 @@ class QRPane(QtWidgets.QScrollArea):
 
 # --------- Main Window ----------
 class MainWindow(QtWidgets.QWidget):
-    # (Stray self.setLayout(grid) removed; all code is now inside methods)
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Wheeler — Windows (Single Client + Overlay)")
         self.resize(1180, 800)              # resizable by default
         self.setMinimumSize(900, 600)
-        # AudioProbe for ONNX FFB (real audio input)
-        self.audio_probe = None
-        # ONNX/classic FFB toggle (initialized here, added to layout below)
-        self.chkOnnxFfb = QtWidgets.QCheckBox("ONNX Audio FFB")
-        self.chkOnnxFfb.setChecked(False)
-        self.chkOnnxFfb.setEnabled(OnnxAudioEventDetector is not None)
-        self.onnx_detector = None
-        if OnnxAudioEventDetector is not None:
-            try:
-                self.onnx_detector = OnnxAudioEventDetector()
-            except Exception as e:
-                self.chkOnnxFfb.setEnabled(False)
-        self.use_onnx_ffb = False
-        self.chkOnnxFfb.toggled.connect(self._toggle_onnx_ffb)
 
         # Size grip for UX
         self._size_grip = QtWidgets.QSizeGrip(self)
@@ -130,7 +110,7 @@ class MainWindow(QtWidgets.QWidget):
             self.overlays.append(Overlay())
 
         # Top bar
-        self.top = QtWidgets.QHBoxLayout()
+        top = QtWidgets.QHBoxLayout()
         self.lblLan = QtWidgets.QLabel(f"{list_ipv4()[0]}:8765")
         self.btnStart = QtWidgets.QPushButton("STOP")
         self.btnStart.clicked.connect(self.toggleServer)
@@ -143,36 +123,16 @@ class MainWindow(QtWidgets.QWidget):
         # FFB source label
         self.lblFfbSrc = QtWidgets.QLabel("FFB: –")
 
-        self.top.addWidget(self.lblLan)
-        self.top.addStretch(1)
-        self.top.addWidget(QtWidgets.QLabel("Pad:"))
-        self.top.addWidget(self.cmbPad)
-        self.top.addSpacing(8)
-        self.top.addWidget(self.lblFfbSrc)
-        self.top.addSpacing(8)
-        self.top.addWidget(self.chkFreezeSteer)
-        self.top.addWidget(self.chkEditOverlay)
-        self.top.addWidget(self.chkOnnxFfb)
-        self.top.addWidget(self.btnStart)
-    def _toggle_onnx_ffb(self, checked):
-        self.use_onnx_ffb = checked
-        if checked:
-            self.lblFfbSrc.setText("FFB: ONNX")
-            # Start audio probe if not running
-            if self.audio_probe is None and AudioProbe is not None:
-                try:
-                    self.audio_probe = AudioProbe(samplerate=48000, blocksize=1024)
-                except Exception as e:
-                    self.audio_probe = None
-        else:
-            self.lblFfbSrc.setText("FFB: AUDIO")
-            # Optionally stop audio probe
-            if self.audio_probe is not None:
-                try:
-                    self.audio_probe.close()
-                except Exception:
-                    pass
-                self.audio_probe = None
+        top.addWidget(self.lblLan)
+        top.addStretch(1)
+        top.addWidget(QtWidgets.QLabel("Pad:"))
+        top.addWidget(self.cmbPad)
+        top.addSpacing(8)
+        top.addWidget(self.lblFfbSrc)
+        top.addSpacing(8)
+        top.addWidget(self.chkFreezeSteer)
+        top.addWidget(self.chkEditOverlay)
+        top.addWidget(self.btnStart)
 
         # Left column: QR + Inputs
         leftCol = QtWidgets.QVBoxLayout()
@@ -247,25 +207,34 @@ class MainWindow(QtWidgets.QWidget):
         ga.addWidget(QtWidgets.QLabel("Audio device"), 0, 0); ga.addWidget(self.cmbAudio, 0, 1)
         self.lblAudioStatus = QtWidgets.QLabel("Audio: Inactive")
         ga.addWidget(self.lblAudioStatus, 0, 2)
+        # ONNX/classic FFB toggle
+        self.chkOnnxFfb = QtWidgets.QCheckBox("Use ONNX/YAMNet FFB")
+        self.chkOnnxFfb.setChecked(False)
+        ga.addWidget(self.chkOnnxFfb, 0, 3)
         self.sldRoad = QtWidgets.QSlider(Qt.Horizontal); self.sldRoad.setRange(0, 200); self.sldRoad.setValue(100)
-        self.sldEng  = QtWidgets.QSlider(Qt.Horizontal); self.sldEng.setRange(0, 200);  self.sldEng.setValue(80)
-        self.sldImp  = QtWidgets.QSlider(Qt.Horizontal); self.sldImp.setRange(0, 200);  self.sldImp.setValue(150)
-        self.sldMusic = QtWidgets.QSlider(Qt.Horizontal); self.sldMusic.setRange(0, 200); self.sldMusic.setValue(10)  # Changed to 0-200 range like others
+        self.sldEng  = QtWidgets.QSlider(Qt.Horizontal); self.sldEng.setRange(0, 200);  self.sldEng.setValue(100)
+        self.sldImp  = QtWidgets.QSlider(Qt.Horizontal); self.sldImp.setRange(0, 200);  self.sldImp.setValue(100)
+        self.sldMusic = QtWidgets.QSlider(Qt.Horizontal); self.sldMusic.setRange(0, 100); self.sldMusic.setValue(60)
         self.sldIntensity = QtWidgets.QSlider(Qt.Horizontal); self.sldIntensity.setRange(0, 200); self.sldIntensity.setValue(100)
-        # Removed gate controls - no longer needed with new audio classification
-        # Add value labels for sliders
-        self.lblRoadVal = QtWidgets.QLabel("100%"); self.lblRoadVal.setMinimumWidth(40)
-        self.lblEngVal = QtWidgets.QLabel("80%"); self.lblEngVal.setMinimumWidth(40)
-        self.lblImpVal = QtWidgets.QLabel("150%"); self.lblImpVal.setMinimumWidth(40)
-        self.lblMusicVal = QtWidgets.QLabel("10%"); self.lblMusicVal.setMinimumWidth(40)
-        self.lblIntensityVal = QtWidgets.QLabel("100%"); self.lblIntensityVal.setMinimumWidth(40)
-        
-        ga.addWidget(QtWidgets.QLabel("🛣️ Road/Surface FFB"), 1, 0); ga.addWidget(self.sldRoad, 1, 1); ga.addWidget(self.lblRoadVal, 1, 2)
-        ga.addWidget(QtWidgets.QLabel("🚗 Engine Vibration"), 2, 0); ga.addWidget(self.sldEng,  2, 1); ga.addWidget(self.lblEngVal, 2, 2)
-        ga.addWidget(QtWidgets.QLabel("💥 Impact/Crash FFB"), 3, 0); ga.addWidget(self.sldImp,  3, 1); ga.addWidget(self.lblImpVal, 3, 2)
-        ga.addWidget(QtWidgets.QLabel("🎵 Music Suppression"), 4, 0); ga.addWidget(self.sldMusic, 4, 1); ga.addWidget(self.lblMusicVal, 4, 2)
-        ga.addWidget(QtWidgets.QLabel("🔊 Overall Intensity"),     5, 0); ga.addWidget(self.sldIntensity, 5, 1); ga.addWidget(self.lblIntensityVal, 5, 2)
+        # Gate thresholds + hold
+        self.sldGateOn  = QtWidgets.QSlider(Qt.Horizontal); self.sldGateOn.setRange(0, 50);  self.sldGateOn.setValue(12)
+        self.sldGateOff = QtWidgets.QSlider(Qt.Horizontal); self.sldGateOff.setRange(0, 50); self.sldGateOff.setValue(5)
+        self.sldGateHold= QtWidgets.QSlider(Qt.Horizontal); self.sldGateHold.setRange(100, 1500); self.sldGateHold.setValue(600)
+        ga.addWidget(QtWidgets.QLabel("Road gain"),   1, 0); ga.addWidget(self.sldRoad, 1, 1)
+        ga.addWidget(QtWidgets.QLabel("Engine gain"), 2, 0); ga.addWidget(self.sldEng,  2, 1)
+        ga.addWidget(QtWidgets.QLabel("Impact gain"), 3, 0); ga.addWidget(self.sldImp,  3, 1)
+        ga.addWidget(QtWidgets.QLabel("Music suppression"), 4, 0); ga.addWidget(self.sldMusic, 4, 1)
+        ga.addWidget(QtWidgets.QLabel("Gate ON thr"), 5, 0); ga.addWidget(self.sldGateOn,  5, 1)
+        ga.addWidget(QtWidgets.QLabel("Gate OFF thr"),6, 0); ga.addWidget(self.sldGateOff, 6, 1)
+        ga.addWidget(QtWidgets.QLabel("Gate hold (ms)"),7, 0); ga.addWidget(self.sldGateHold, 7, 1)
+        ga.addWidget(QtWidgets.QLabel("Intensity"),     8, 0); ga.addWidget(self.sldIntensity, 8, 1)
         rightCol.addWidget(boxAudio)
+
+        # ONNX FFB state and detector
+        self.use_onnx_ffb = False
+        self.onnx_detector = None
+        self.audio_probe = None
+        self.chkOnnxFfb.toggled.connect(self._toggle_onnx_ffb)
 
         labClients = QtWidgets.QLabel("Client"); rightCol.addWidget(labClients)
         self.lstClients = QtWidgets.QListWidget(); rightCol.addWidget(self.lstClients, 1)
@@ -277,10 +246,9 @@ class MainWindow(QtWidgets.QWidget):
         # Layout
         grid = QtWidgets.QGridLayout(self)
         grid.setContentsMargins(16, 12, 16, 12)
-        grid.setHorizontalSpacing(18)
-        grid.setVerticalSpacing(12)
-        grid.addLayout(self.top, 0, 0, 1, 2)
-        grid.addLayout(leftCol, 1, 0, 1, 1)
+        grid.setHorizontalSpacing(18); grid.setVerticalSpacing(12)
+        grid.addLayout(top,      0, 0, 1, 2)
+        grid.addLayout(leftCol,  1, 0, 1, 1)
         grid.addLayout(rightCol, 1, 1, 1, 1)
 
         # Wire overlay controls (broadcast to all overlays)
@@ -300,13 +268,16 @@ class MainWindow(QtWidgets.QWidget):
         self.cmbPad.currentTextChanged.connect(lambda s: self.server.set_pad_target(s.lower()))
         # Removed legacy FFB toggles (bed/hybrid/mask/test) to keep FFB simple
 
-        # Audio sliders → server (updated for new audio classification system)
+        # Audio sliders → server
         self.cmbAudio.currentIndexChanged.connect(lambda _: self.server.set_audio_device(self.cmbAudio.currentData()))
-        self.sldRoad.valueChanged.connect(lambda v: [self.server.set_audio_category_gain('road', v/100.0), self.lblRoadVal.setText(f"{v}%")])
-        self.sldEng.valueChanged.connect(lambda v: [self.server.set_audio_category_gain('engine', v/100.0), self.lblEngVal.setText(f"{v}%")])
-        self.sldImp.valueChanged.connect(lambda v: [self.server.set_audio_category_gain('impact', v/100.0), self.lblImpVal.setText(f"{v}%")])
-        self.sldMusic.valueChanged.connect(lambda v: [self.server.set_audio_category_gain('music', v/100.0), self.lblMusicVal.setText(f"{v}%")])
-        self.sldIntensity.valueChanged.connect(lambda v: [self.server.set_audio_intensity(v/100.0), self.lblIntensityVal.setText(f"{v}%")])
+        self.sldRoad.valueChanged.connect(lambda v: self.server.set_audio_road_gain(v/100.0))
+        self.sldEng.valueChanged.connect(lambda v: self.server.set_audio_engine_gain(v/100.0))
+        self.sldImp.valueChanged.connect(lambda v: self.server.set_audio_impact_gain(v/100.0))
+        self.sldMusic.valueChanged.connect(lambda v: self.server.set_audio_music_suppress(v/100.0))
+        self.sldGateOn.valueChanged.connect(lambda v: self.server.set_audio_gate_on(v/100.0))
+        self.sldGateOff.valueChanged.connect(lambda v: self.server.set_audio_gate_off(v/100.0))
+        self.sldGateHold.valueChanged.connect(lambda v: self.server.set_audio_gate_hold(int(v)))
+        self.sldIntensity.valueChanged.connect(lambda v: self.server.set_audio_intensity(v/100.0))
         # Reflect audio helper/probe status
         try:
             self.server.audio_status_changed.connect(lambda s: self.lblAudioStatus.setText(f"Audio: {s}"))
@@ -325,6 +296,27 @@ class MainWindow(QtWidgets.QWidget):
         # Start server
         self._running = False
         self.toggleServer()
+
+    # ----- ONNX/classic FFB toggle handler -----
+    def _toggle_onnx_ffb(self, checked):
+        self.use_onnx_ffb = checked
+        if checked:
+            try:
+                from haptics.onnx_audio_event_detector import OnnxAudioEventDetector
+                from haptics.audio_probe import AudioProbe
+                self.onnx_detector = OnnxAudioEventDetector()
+                self.audio_probe = AudioProbe(device=self.cmbAudio.currentData())
+                self.lblFfbSrc.setText("FFB: ONNX")
+                self.lblAudioStatus.setText("Audio: ONNX active")
+            except Exception as e:
+                self.lblAudioStatus.setText(f"Audio: ONNX error: {e}")
+                self.onnx_detector = None
+                self.audio_probe = None
+        else:
+            self.onnx_detector = None
+            self.audio_probe = None
+            self.lblAudioStatus.setText("Audio: Inactive")
+            self.lblFfbSrc.setText("FFB: AUDIO")
 
     # ----- server toggle -----
     def toggleServer(self):
@@ -375,26 +367,30 @@ class MainWindow(QtWidgets.QWidget):
         # Feed overlay
         self._for_each_overlay(lambda o: o.set_telemetry(x, latG))
 
-        # ONNX/classic FFB logic
-        if self.use_onnx_ffb and self.onnx_detector is not None and self.audio_probe is not None:
+        # ONNX FFB path
+        if getattr(self, 'use_onnx_ffb', False) and self.onnx_detector and self.audio_probe:
             try:
-                audio = self.audio_probe.get_onnx_audio(16000)
-                events = self.onnx_detector.predict(audio)
-                # Map ONNX events to FFB output (simple demo: use top score as rumble)
-                if events:
-                    top_event, top_score = events[0]
-                    rumbleL = rumbleR = min(1.0, max(0.0, top_score))
-                    src = f"onnx:{top_event}"
-                    self.lblFfbSrc.setText(f"FFB: ONNX {top_event}")
-                else:
-                    rumbleL = rumbleR = 0.0
-                    src = "onnx:none"
+                audio = self.audio_probe.get_onnx_audio()
+                if audio is not None:
+                    events = self.onnx_detector.predict(audio)
+                    # Events is now a list of (event_name, confidence) tuples
+                    event_names = [name.lower() for name, conf in events]
+                    # Map sound events to rumble based on detected events
+                    rumbleL = 0.0
+                    rumbleR = 0.0
+                    for name, confidence in events[:3]:  # Use top 3 events
+                        if confidence > 0.1:  # Only use confident predictions
+                            name_lower = name.lower()
+                            if any(keyword in name_lower for keyword in ['engine', 'motor', 'car']):
+                                rumbleL += confidence * 0.5
+                            if any(keyword in name_lower for keyword in ['road', 'tire', 'skid']):
+                                rumbleR += confidence * 0.5
+                    # Send to server/backend as needed
+                    self.lblFfbSrc.setText(f"FFB: ONNX ({len([e for e in events if e[1] > 0.1])} events)")
             except Exception as e:
-                rumbleL = rumbleR = 0.0
-                src = "onnx:error"
-                self.lblFfbSrc.setText("FFB: ONNX ERROR")
+                self.lblAudioStatus.setText(f"ONNX error: {e}")
         else:
-            # Fallback: classic label logic
+            # FFB source label (classic path)
             try:
                 s = str(src).lower() if isinstance(src, (str, bytes)) else ""
                 if   s == "real":  self.lblFfbSrc.setText("FFB: REAL")
@@ -403,7 +399,6 @@ class MainWindow(QtWidgets.QWidget):
                 else:               self.lblFfbSrc.setText("FFB: NONE")
             except Exception:
                 pass
-        # TODO: Send FFB to phone if needed (handled by UDPServer in backend)
 
     def onButtons(self, btns: dict):
         pass

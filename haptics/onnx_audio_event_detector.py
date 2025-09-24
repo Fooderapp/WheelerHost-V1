@@ -44,10 +44,10 @@ class OnnxAudioEventDetector:
         """
         if audio_mono_16k.dtype != np.float32:
             audio_mono_16k = audio_mono_16k.astype(np.float32)
-        audio_mono_16k = np.expand_dims(audio_mono_16k, axis=0)  # [1, N]
+        # YAMNet expects 1D waveform, not batched
         outputs = self.session.run(None, {self.input_name: audio_mono_16k})
-        # YAMNet ONNX output: [batch, frames, classes]
-        scores = outputs[0][0]  # [frames, classes]
+        # YAMNet ONNX output: [frames, classes]
+        scores = outputs[0]  # [frames, classes]
         mean_scores = np.mean(scores, axis=0)  # [classes]
         top_ids = np.argsort(mean_scores)[::-1][:5]
         return [(self.class_map.get(i, str(i)), float(mean_scores[i])) for i in top_ids]
