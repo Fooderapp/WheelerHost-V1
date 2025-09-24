@@ -100,8 +100,10 @@ class AudioProbe:
             return
 
         try:
-            # Try WASAPI loopback on Windows; default otherwise
+            # Try WASAPI loopback on Windows; default input on macOS/Linux
             kwargs = { 'dtype':'float32', 'latency':'low', 'samplerate': self._sr, 'channels': 2 }
+            
+            # Windows: Use WASAPI loopback for system audio capture
             if hasattr(sd, 'WasapiSettings'):
                 try:
                     # Pick an explicit loopback device if available
@@ -118,12 +120,19 @@ class AudioProbe:
                             dev_index = None
                     ws = sd.WasapiSettings(loopback=True)
                     self._stream = sd.InputStream(callback=self._cb, blocksize=self._bs, extra_settings=ws, device=dev_index, **kwargs)
-                except Exception:
-                    self._stream = sd.InputStream(callback=self._cb, blocksize=self._bs, **kwargs)
+                    print("✓ Audio: Windows WASAPI loopback initialized")
+                except Exception as e:
+                    print(f"⚠ Audio: WASAPI loopback failed ({e}), trying default input")
+                    self._stream = sd.InputStream(callback=self._cb, blocksize=self._bs, device=self._device, **kwargs)
             else:
-                self._stream = sd.InputStream(callback=self._cb, blocksize=self._bs, samplerate=self._sr, channels=2, dtype='float32', latency='low')
+                # macOS/Linux: Use default input device (microphone)
+                print("✓ Audio: Using default input device (macOS/Linux)")
+                self._stream = sd.InputStream(callback=self._cb, blocksize=self._bs, device=self._device, **kwargs)
+            
             self._stream.start()
-        except Exception:
+            print(f"✓ Audio stream started: {self._sr}Hz, {self._bs} samples, device {self._device}")
+        except Exception as e:
+            print(f"✗ Audio initialization failed: {e}")
             self.enabled = False
             self._stream = None
 
@@ -163,6 +172,8 @@ class AudioProbe:
             pass
     def get_onnx_audio(self, length=16000):
         """Get the most recent 'length' samples (mono, 16kHz) for ONNX."""
+        if not self.enabled or self._onnx_buffer is None:
+            return None
         with self._lock:
             if length > self._onnx_bufsize:
                 length = self._onnx_bufsize

@@ -285,18 +285,45 @@ class MainWindow(QtWidgets.QWidget):
                 from haptics.onnx_audio_event_detector import OnnxAudioEventDetector
                 from haptics.audio_probe import AudioProbe
                 self.onnx_detector = OnnxAudioEventDetector()
-                self.audio_probe = AudioProbe(device=self.cmbAudio.currentData())
+                device_id = self.cmbAudio.currentData() if self.cmbAudio.currentData() != -1 else None
+                self.audio_probe = AudioProbe(device=device_id)
+                
+                # Check if audio probe is working, fallback to test generator if not
+                if self.audio_probe.enabled:
+                    self.lblAudioStatus.setText("Audio: ONNX Active")
+                    print("✓ ONNX FFB enabled with real audio probe")
+                else:
+                    print("⚠ Real audio capture unavailable, using test audio generator for ONNX demo")
+                    try:
+                        from haptics.test_audio_generator import TestAudioGenerator
+                        self.audio_probe = TestAudioGenerator()
+                        self.audio_probe.start()
+                        self.lblAudioStatus.setText("Audio: ONNX (Test Generator)")
+                        print("✓ Test audio generator active - generating synthetic engine/impact/road sounds")
+                    except Exception as gen_e:
+                        print(f"✗ Test audio generator also failed: {gen_e}")
+                        self.lblAudioStatus.setText("Audio: ONNX (no audio)")
+                
                 self.lblFfbSrc.setText("FFB: ONNX")
-                self.lblAudioStatus.setText("Audio: ONNX active")
             except Exception as e:
-                self.lblAudioStatus.setText(f"Audio: ONNX error: {e}")
+                self.use_onnx_ffb = False
+                self.lblAudioStatus.setText(f"ONNX failed: {str(e)[:30]}")
+                self.lblFfbSrc.setText("FFB: Classic (ONNX failed)")
+                print(f"✗ ONNX FFB initialization failed: {e}")
                 self.onnx_detector = None
                 self.audio_probe = None
         else:
+            # Clean up
+            if hasattr(self, 'audio_probe') and self.audio_probe:
+                if hasattr(self.audio_probe, 'close'):
+                    self.audio_probe.close()
+                elif hasattr(self.audio_probe, 'stop'):
+                    self.audio_probe.stop()
+                self.audio_probe = None
             self.onnx_detector = None
-            self.audio_probe = None
-            self.lblAudioStatus.setText("Audio: Inactive")
-            self.lblFfbSrc.setText("FFB: AUDIO")
+            self.lblAudioStatus.setText("Audio: Classic")
+            self.lblFfbSrc.setText("FFB: Classic")
+            print("✓ ONNX FFB disabled, using classic mode")
 
     # ----- server toggle -----
     def toggleServer(self):
@@ -350,43 +377,66 @@ class MainWindow(QtWidgets.QWidget):
         # ONNX FFB path - rich haptic pattern generation from sound events
         if getattr(self, 'use_onnx_ffb', False) and self.onnx_detector and self.audio_probe:
             try:
+                # Check if audio probe is working
+                if not self.audio_probe.enabled:
+                    self.lblAudioLevel.setText("Audio Level: probe disabled")
+                    self.lblOnnxEvent.setText("ONNX Event: no audio")
+                    self.lblOnnxHaptic.setText("Haptic: –")
+                    return
+                
                 audio = self.audio_probe.get_onnx_audio()
-                if audio is not None:
-                    # Show audio level (RMS) without numpy
-                    if audio is not None and len(audio) > 0:
-                        # audio is expected to be a sequence of floats
-                        s = 0.0
-                        for v in audio:
-                            s += v * v
-                        rms = (s / len(audio)) ** 0.5
-                    else:
+                if audio is not None and len(audio) > 0:
+                    # Calculate RMS without numpy (cross-platform)
+                    try:
+                        # Handle both numpy arrays and lists
+                        if hasattr(audio, '__iter__'):
+                            s = 0.0
+                            count = 0
+                            for v in audio:
+                                val = float(v)
+                                s += val * val
+                                count += 1
+                            rms = (s / max(count, 1)) ** 0.5
+                        else:
+                            rms = 0.0
+                    except Exception:
                         rms = 0.0
+                    
                     self.lblAudioLevel.setText(f"Audio Level: {rms:.3f}")
-                    events = self.onnx_detector.predict(audio)
-                    # Generate rich haptic patterns based on sound events
-                    haptic_patterns = self._generate_haptic_patterns(events)
-                    # Visualize ONNX event and haptic output
-                    if events:
-                        top_event = max(events, key=lambda e: e[1])
-                        self.lblOnnxEvent.setText(f"ONNX Event: {top_event[0]} ({top_event[1]:.2f})")
+                    
+                    # Only run ONNX if we have meaningful audio
+                    if rms > 0.001:  # Threshold to avoid processing silence
+                        events = self.onnx_detector.predict(audio)
+                        # Generate rich haptic patterns based on sound events
+                        haptic_patterns = self._generate_haptic_patterns(events)
+                        # Visualize ONNX event and haptic output
+                        if events:
+                            top_event = max(events, key=lambda e: e[1])
+                            self.lblOnnxEvent.setText(f"ONNX Event: {top_event[0]} ({top_event[1]:.2f})")
+                        else:
+                            self.lblOnnxEvent.setText("ONNX Event: –")
+                        if haptic_patterns:
+                            self._send_onnx_haptics(haptic_patterns)
+                            haptic_str = ', '.join(f"{k}:{v:.2f}" for k,v in haptic_patterns.items() if v > 0.05)
+                            self.lblOnnxHaptic.setText(f"Haptic: {haptic_str}")
+                            active_events = [name for name, conf in events if conf > 0.1]
+                            self.lblFfbSrc.setText(f"FFB: ONNX ({len(active_events)} events: {', '.join(active_events[:2])})")
+                        else:
+                            self.lblFfbSrc.setText("FFB: ONNX (no events)")
+                            self.lblOnnxHaptic.setText("Haptic: –")
                     else:
-                        self.lblOnnxEvent.setText("ONNX Event: –")
-                    if haptic_patterns:
-                        self._send_onnx_haptics(haptic_patterns)
-                        haptic_str = ', '.join(f"{k}:{v:.2f}" for k,v in haptic_patterns.items() if v > 0.05)
-                        self.lblOnnxHaptic.setText(f"Haptic: {haptic_str}")
-                        active_events = [name for name, conf in events if conf > 0.1]
-                        self.lblFfbSrc.setText(f"FFB: ONNX ({len(active_events)} events: {', '.join(active_events[:2])})")
-                    else:
-                        self.lblFfbSrc.setText("FFB: ONNX (no events)")
+                        self.lblOnnxEvent.setText("ONNX Event: silence")
                         self.lblOnnxHaptic.setText("Haptic: –")
+                        self.lblFfbSrc.setText("FFB: ONNX (silence)")
                 else:
-                    self.lblAudioLevel.setText("Audio Level: –")
+                    self.lblAudioLevel.setText("Audio Level: no data")
+                    self.lblOnnxEvent.setText("ONNX Event: no audio data")
+                    self.lblOnnxHaptic.setText("Haptic: –")
             except Exception as e:
-                self.lblAudioStatus.setText(f"ONNX error: {e}")
+                self.lblAudioStatus.setText(f"ONNX error: {str(e)[:50]}")
                 self.lblOnnxEvent.setText("ONNX Event: error")
                 self.lblOnnxHaptic.setText("Haptic: –")
-                self.lblAudioLevel.setText("Audio Level: error")
+                self.lblAudioLevel.setText(f"Audio Level: error ({str(e)[:20]})")
         else:
             # FFB source label (classic path)
             try:
