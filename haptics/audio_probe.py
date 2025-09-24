@@ -56,14 +56,6 @@ def list_devices():
 
 class AudioProbe:
     def __init__(self, samplerate: int = 48000, blocksize: int = 1024, device: int | None = None):
-        # For ONNX: ring buffer for recent audio (mono, 16kHz)
-        self._onnx_sr = 16000
-        self._onnx_bufsize = self._onnx_sr  # 1 second
-        if np is not None:
-            self._onnx_buffer = np.zeros(self._onnx_bufsize, dtype=np.float32)
-        else:
-            self._onnx_buffer = None
-        self._onnx_buf_pos = 0
         self.enabled = (np is not None and sd is not None)
         self._sr = int(samplerate)
         self._bs = int(blocksize)
@@ -100,10 +92,8 @@ class AudioProbe:
             return
 
         try:
-            # Try WASAPI loopback on Windows; default input on macOS/Linux
+            # Try WASAPI loopback on Windows; default otherwise
             kwargs = { 'dtype':'float32', 'latency':'low', 'samplerate': self._sr, 'channels': 2 }
-            
-            # Windows: Use WASAPI loopback for system audio capture
             if hasattr(sd, 'WasapiSettings'):
                 try:
                     # Pick an explicit loopback device if available
@@ -120,19 +110,12 @@ class AudioProbe:
                             dev_index = None
                     ws = sd.WasapiSettings(loopback=True)
                     self._stream = sd.InputStream(callback=self._cb, blocksize=self._bs, extra_settings=ws, device=dev_index, **kwargs)
-                    print("✓ Audio: Windows WASAPI loopback initialized")
-                except Exception as e:
-                    print(f"⚠ Audio: WASAPI loopback failed ({e}), trying default input")
-                    self._stream = sd.InputStream(callback=self._cb, blocksize=self._bs, device=self._device, **kwargs)
+                except Exception:
+                    self._stream = sd.InputStream(callback=self._cb, blocksize=self._bs, **kwargs)
             else:
-                # macOS/Linux: Use default input device (microphone)
-                print("✓ Audio: Using default input device (macOS/Linux)")
-                self._stream = sd.InputStream(callback=self._cb, blocksize=self._bs, device=self._device, **kwargs)
-            
+                self._stream = sd.InputStream(callback=self._cb, blocksize=self._bs, samplerate=self._sr, channels=2, dtype='float32', latency='low')
             self._stream.start()
-            print(f"✓ Audio stream started: {self._sr}Hz, {self._bs} samples, device {self._device}")
-        except Exception as e:
-            print(f"✗ Audio initialization failed: {e}")
+        except Exception:
             self.enabled = False
             self._stream = None
 
@@ -148,42 +131,16 @@ class AudioProbe:
             x = np.asarray(indata, dtype=np.float32)
             if x.ndim == 2:
                 x = x.mean(axis=1)
-            # Resample to 16kHz for ONNX (if needed)
-            if self._sr != self._onnx_sr:
-                # Simple downsample (not ideal, but works for short blocks)
-                factor = self._sr / self._onnx_sr
-                idx = (np.arange(0, len(x)) / factor).astype(int)
-                idx = idx[idx < len(x)]
-                x_16k = x[idx]
-            else:
-                x_16k = x
-            # Write to ONNX ring buffer
-            n = len(x_16k)
-            if n > 0:
-                end = self._onnx_buf_pos + n
-                if end <= self._onnx_bufsize:
-                    self._onnx_buffer[self._onnx_buf_pos:end] = x_16k
-                else:
-                    first = self._onnx_bufsize - self._onnx_buf_pos
-                    self._onnx_buffer[self._onnx_buf_pos:] = x_16k[:first]
-                    self._onnx_buffer[:n-first] = x_16k[first:]
-                self._onnx_buf_pos = (self._onnx_buf_pos + n) % self._onnx_bufsize
-        except Exception:
-            pass
-    def get_onnx_audio(self, length=16000):
-        """Get the most recent 'length' samples (mono, 16kHz) for ONNX."""
-        if not self.enabled or self._onnx_buffer is None:
-            return None
-        with self._lock:
-            if length > self._onnx_bufsize:
-                length = self._onnx_bufsize
-            pos = self._onnx_buf_pos
-            if pos - length >= 0:
-                return np.copy(self._onnx_buffer[pos-length:pos])
-            else:
-                part1 = self._onnx_buffer[pos-length:]
-                part2 = self._onnx_buffer[:pos]
-                return np.concatenate((part1, part2))
+            # Hann window
+            N = int(len(x))
+            if N <= 0: return
+            w = np.hanning(N).astype(np.float32)
+            xf = np.fft.rfft(x * w)
+            mag = np.abs(xf)
+            freqs = np.fft.rfftfreq(N, 1.0/self._sr)
+
+            # Bands
+            def band(a,b):
                 i0 = int(a * N / self._sr)
                 i1 = int(b * N / self._sr)
                 m = mag[(freqs>=a) & (freqs<=b)]
@@ -273,6 +230,8 @@ class AudioProbe:
                     "engine": eng_o, "road": road_o,
                     "tactile": tactile_o, "tactHz": float(np.clip(self._tact_hz, 80.0, 230.0)),
                 }
+        except Exception:
+            pass
 
     def get(self) -> Dict[str, float]:
         with self._lock:

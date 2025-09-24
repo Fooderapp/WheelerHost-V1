@@ -3,13 +3,3 @@ PySide6-Addons
 qrcode
 pillow
 
-# ONNX/YAMNet sound event detection
-onnxruntime>=1.15.0
-numpy>=1.24.0,<2.0.0
-
-# Audio capture (Windows WASAPI loopback, macOS/Linux input)
-sounddevice>=0.4.6
-
-# Network helpers
-netifaces>=0.11.0
-
