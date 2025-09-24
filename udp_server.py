@@ -246,6 +246,8 @@ class UDPServer(QtCore.QObject):
         self._mask_real_zero = False
         env_syn = str(os.environ.get("WHEELER_SYNTH", "1")).strip().lower()
         self._synth_enabled = env_syn not in ("0","off","false","no")
+        # Debug/status
+        self._last_error: Optional[str] = None
 
     def _on_ffb(self, L: float, R: float):
         self._ffbL = float(max(0.0, min(1.0, L)))
@@ -415,7 +417,16 @@ class UDPServer(QtCore.QObject):
         except Exception as e:
             LOG.log(f"⚠️ Could not disable UDP connreset: {e}")
 
-        sock.bind(("0.0.0.0", self.port))
+        try:
+            sock.bind(("0.0.0.0", self.port))
+        except OSError as e:
+            self._last_error = f"PORT_IN_USE:{self.port} {e}"
+            LOG.log(f"❌ UDP bind failed on :{self.port} — is another instance running? ({e})")
+            try:
+                sock.close()
+            except Exception:
+                pass
+            return
         sock.settimeout(0.2)
         last_udp_err_ms = 0
 
@@ -768,6 +779,7 @@ class UDPServer(QtCore.QObject):
 
         try: sock.close()
         except Exception: pass
+        # Cleanup resources on thread exit
         try: self._bridge.close()
         except Exception: pass
         try:
@@ -780,6 +792,43 @@ class UDPServer(QtCore.QObject):
         except Exception:
             pass
         LOG.log("🛑 UDP server stopped")
+
+    # ---- diagnostics ----
+    def get_status(self) -> dict:
+        return {
+            "running": bool(self._th and self._th.is_alive()),
+            "port": self.port,
+            "client": (None if not self._client else f"{self._client.addr[0]}:{self._client.addr[1]} ({self._client.state})"),
+            "last_error": self._last_error,
+        }
+
+    def send_test_haptics(self, rumble: float = 0.7, impact: float = 0.8) -> bool:
+        """Send a one-off haptics packet directly to the locked client for debugging."""
+        if not self._client:
+            LOG.log("⚠️ Test haptics: no client connected")
+            return False
+        try:
+            addr = self._client.addr
+            pkt = {
+                "ack": 0, "status": "ok",
+                "rumble": float(rumble),
+                "rumbleL": float(rumble), "rumbleR": float(rumble),
+                "impact": float(impact),
+                "trigL": 0.5, "trigR": 0.5,
+                "audInt": 0.6, "audHz": 120.0,
+                "audLowInt": 0.5, "audLowHz": 90.0,
+                "audHighInt": 0.4, "audHighHz": 180.0,
+                "center": 0.0, "centerDeg": 0.0,
+                "resistance": 1.0, "note": "test"
+            }
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.sendto(json.dumps(pkt).encode("utf-8"), addr)
+            s.close()
+            LOG.log("📡 Test haptics packet sent to phone")
+            return True
+        except Exception as e:
+            LOG.log(f"❌ Test haptics send failed: {e}")
+            return False
 
     # ----- audio tuning (updated for audio classification) -----
     @QtCore.Slot(str, float)

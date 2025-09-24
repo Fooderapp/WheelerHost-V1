@@ -222,6 +222,18 @@ class MainWindow(QtWidgets.QWidget):
         ga.addWidget(QtWidgets.QLabel("Intensity"), 8, 0); ga.addWidget(self.sldIntensity, 8, 1)
         self.rightCol.addWidget(boxAudio)
 
+        # Right: Debug & Status group
+        boxDbg = QtWidgets.QGroupBox("Debug & Status")
+        gd = QtWidgets.QGridLayout(boxDbg); gd.setHorizontalSpacing(12); gd.setVerticalSpacing(6)
+        self.lblServerStatus = QtWidgets.QLabel("Server: —")
+        self.btnSendTestHaptics = QtWidgets.QPushButton("Send Test Haptics")
+        self.btnSendTestHaptics.clicked.connect(self._send_test_haptics)
+        self.btnRefreshStatus = QtWidgets.QPushButton("Refresh")
+        self.btnRefreshStatus.clicked.connect(self._update_server_status)
+        gd.addWidget(QtWidgets.QLabel("Status"), 0, 0); gd.addWidget(self.lblServerStatus, 0, 1, 1, 2)
+        gd.addWidget(self.btnSendTestHaptics, 1, 1); gd.addWidget(self.btnRefreshStatus, 1, 2)
+        self.rightCol.addWidget(boxDbg)
+
         # ONNX FFB state and detector
         self.use_onnx_ffb = False
         self.onnx_detector = None
@@ -276,6 +288,13 @@ class MainWindow(QtWidgets.QWidget):
         # Initialize ONNX if default ON
         if self.chkOnnxFfb.isChecked():
             self._toggle_onnx_ffb(True)
+
+        # Periodic server status updates
+        self._status_timer = QtCore.QTimer(self)
+        self._status_timer.setInterval(1000)
+        self._status_timer.timeout.connect(self._update_server_status)
+        self._status_timer.start()
+        QtCore.QTimer.singleShot(400, self._update_server_status)
 
     # ----- ONNX/classic FFB toggle handler -----
     def _toggle_onnx_ffb(self, checked):
@@ -333,9 +352,11 @@ class MainWindow(QtWidgets.QWidget):
             self.btnStart.setText("STOP")
             self.qrPane.refresh()
             self.lblLan.setText(f"{list_ipv4()[0]}:8765")
+            QtCore.QTimer.singleShot(500, self._update_server_status)
         else:
             self.server.stop()
             self.btnStart.setText("START")
+            QtCore.QTimer.singleShot(200, self._update_server_status)
         self._running = not running
 
     # ----- log -----
@@ -543,6 +564,38 @@ class MainWindow(QtWidgets.QWidget):
         if not hasattr(self.server, '_onnx_patterns'):
             self.server._onnx_patterns = {}
         self.server._onnx_patterns.update(patterns)
+
+    # ----- debug panel handlers -----
+    def _update_server_status(self):
+        try:
+            st = self.server.get_status()
+        except Exception as e:
+            self.lblServerStatus.setText(f"Error: {e}")
+            return
+        running = st.get('running')
+        port = st.get('port')
+        client = st.get('client')
+        last_err = st.get('last_error')
+        if running:
+            txt = f"Running on :{port}"
+        else:
+            txt = f"Stopped on :{port}"
+        if client:
+            txt += f" | Client: {client}"
+        if last_err:
+            txt += f" | Error: {last_err}"
+        self.lblServerStatus.setText(txt)
+
+    def _send_test_haptics(self):
+        ok = False
+        try:
+            ok = self.server.send_test_haptics(0.7, 0.9)
+        except Exception:
+            ok = False
+        if not ok:
+            self._appendLog("[local] Test haptics failed or no client connected\n")
+        else:
+            self._appendLog("[local] Test haptics sent\n")
 
     # ----- helper -----
     def _for_each_overlay(self, fn):
