@@ -1,6 +1,7 @@
 """
 ONNX-based real-time sound event detector for force feedback.
-Uses a pre-trained YAMNet ONNX model for audio event classification.
+Uses a pre-trained YAMNet ONNX model (YAMNet) for audio event classification.
+Robust to Python lists vs numpy arrays and auto-pads/trims to 1s at 16kHz.
 """
 import os
 import numpy as np
@@ -15,7 +16,9 @@ class OnnxAudioEventDetector:
             raise FileNotFoundError(f"ONNX model not found: {self.model_path}")
         self.session = ort.InferenceSession(self.model_path, providers=['CPUExecutionProvider'])
         # YAMNet expects mono 16kHz float32 waveform
-        self.input_name = self.session.get_inputs()[0].name
+        inp = self.session.get_inputs()[0]
+        self.input_name = inp.name
+        self.input_shape = inp.shape  # e.g., [n] or [1, n]
         self.class_map = self._load_class_map()
 
     def _load_class_map(self):
@@ -50,15 +53,32 @@ class OnnxAudioEventDetector:
             435: 'Rain_on_surface', 436: 'Wet_road', 437: 'Puddle_splash',
         }
 
-    def predict(self, audio_mono_16k: np.ndarray):
+    def predict(self, audio_mono_16k):
         """
         Run ONNX model on a mono 16kHz float32 waveform.
-        Returns: (scores, class_ids)
+        Accepts Python lists or numpy arrays. Pads/trims to 16000 samples.
+        Returns: list[(class_name, confidence)] for top-5 classes.
         """
-        if audio_mono_16k.dtype != np.float32:
-            audio_mono_16k = audio_mono_16k.astype(np.float32)
-        # YAMNet expects 1D waveform, not batched
-        outputs = self.session.run(None, {self.input_name: audio_mono_16k})
+        # Convert to np.float32 1-D array
+        x = np.asarray(audio_mono_16k, dtype=np.float32).reshape(-1)
+        # Pad/trim to exactly 16000 samples (1s @16kHz)
+        target = 16000
+        n = x.shape[0]
+        if n < target:
+            x = np.pad(x, (0, target - n), mode='constant')
+        elif n > target:
+            x = x[-target:]
+
+        # Some YAMNet ONNX variants expect [N], others [1,N]
+        feed = x
+        try:
+            if isinstance(self.input_shape, (list, tuple)) and len(self.input_shape) == 2:
+                # shape like [1, n]
+                feed = x[np.newaxis, :]
+        except Exception:
+            pass
+
+        outputs = self.session.run(None, {self.input_name: feed})
         # YAMNet ONNX output: [frames, classes]
         scores = outputs[0]  # [frames, classes]
         mean_scores = np.mean(scores, axis=0)  # [classes]
