@@ -84,9 +84,16 @@ class QRPane(QtWidgets.QScrollArea):
 class MainWindow(QtWidgets.QWidget):
     def _generate_haptic_patterns(self, events):
         """
-        Map ONNX events to rich haptic patterns for phone telemetry.
+        Map ONNX events to rich haptic patterns for phone telemetry, with prioritization and force mute.
         Returns a dict with keys: impact, trigL, trigR, audInt, audHz, audLowInt, audLowHz, audHighInt, audHighHz, rumbleL, rumbleR
         """
+        # Prioritization: 1. Impact 2. Road/Skid 3. Engine 4. Music
+        priorities = [
+            ('impact', ['impact', 'crash', 'bang', 'hit']),
+            ('road', ['road', 'dirt', 'surface', 'gravel', 'skid', 'tire', 'squeal', 'brake']),
+            ('engine', ['engine', 'motor', 'car', 'vehicle']),
+            ('music', ['music', 'song', 'melody'])
+        ]
         # Default: all off
         patterns = {
             'impact': 0.0, 'trigL': 0.0, 'trigR': 0.0,
@@ -95,36 +102,57 @@ class MainWindow(QtWidgets.QWidget):
             'audHighInt': 0.0, 'audHighHz': 0.0,
             'rumbleL': 0.0, 'rumbleR': 0.0
         }
-        for name, conf in events:
-            n = name.lower()
-            if conf < 0.12:
-                continue
-            if 'skid' in n or 'tire squeal' in n:
-                # Skid: high Hz, fast, sharp
-                patterns['audHighInt'] = max(patterns['audHighInt'], min(1.0, conf * 1.2))
-                patterns['audHighHz'] = 180.0 + 40.0 * conf
-                patterns['trigR'] = max(patterns['trigR'], conf)
-            elif 'road' in n or 'dirt' in n:
-                # Road/dirt: rough, mid Hz
-                patterns['audLowInt'] = max(patterns['audLowInt'], min(1.0, conf))
-                patterns['audLowHz'] = 32.0 + 12.0 * conf
-                patterns['rumbleL'] = max(patterns['rumbleL'], conf * 0.5)
-                patterns['rumbleR'] = max(patterns['rumbleR'], conf * 0.5)
-            elif 'impact' in n or 'crash' in n or 'bang' in n:
-                # Impact/crash: strong hit
-                patterns['impact'] = max(patterns['impact'], min(1.0, conf * 1.5))
-                patterns['trigL'] = max(patterns['trigL'], conf)
-                patterns['trigR'] = max(patterns['trigR'], conf)
-            elif 'engine' in n or 'motor' in n:
-                # Engine: low Hz rumble
-                patterns['audLowInt'] = max(patterns['audLowInt'], min(1.0, conf * 0.7))
-                patterns['audLowHz'] = 24.0 + 20.0 * conf
-                patterns['rumbleL'] = max(patterns['rumbleL'], conf * 0.4)
-                patterns['rumbleR'] = max(patterns['rumbleR'], conf * 0.4)
-            elif 'music' in n:
-                # Music: suppress haptics
-                for k in patterns:
-                    patterns[k] *= 0.5
+        # Find highest priority event present
+        event_priority = None
+        event_conf = 0.0
+        event_name = ''
+        for prio, keywords in priorities:
+            for name, conf in events:
+                n = name.lower()
+                if conf < 0.12:
+                    continue
+                if any(k in n for k in keywords):
+                    if conf > event_conf:
+                        event_priority = prio
+                        event_conf = conf
+                        event_name = name
+            if event_priority:
+                break
+        # Apply force mute from sliders
+        mute = {
+            'impact': getattr(self, 'muteImpact', 0.0),
+            'road': getattr(self, 'muteRoad', 0.0),
+            'engine': getattr(self, 'muteEngine', 0.0),
+            'music': getattr(self, 'muteMusic', 0.0)
+        }
+        # Map event to haptic pattern
+        if event_priority == 'impact':
+            c = event_conf * (1.0 - mute['impact'])
+            patterns['impact'] = min(1.0, c * 1.5)
+            patterns['trigL'] = c
+            patterns['trigR'] = c
+            patterns['rumbleL'] = c * 0.8
+            patterns['rumbleR'] = c * 0.8
+            patterns['audInt'] = c
+            patterns['audHz'] = 150.0
+        elif event_priority == 'road':
+            c = event_conf * (1.0 - mute['road'])
+            patterns['audLowInt'] = min(1.0, c)
+            patterns['audLowHz'] = 32.0 + 12.0 * c
+            patterns['rumbleL'] = c * 0.5
+            patterns['rumbleR'] = c * 0.5
+            patterns['audHighInt'] = c * 0.5
+            patterns['audHighHz'] = 180.0 + 40.0 * c
+        elif event_priority == 'engine':
+            c = event_conf * (1.0 - mute['engine'])
+            patterns['audLowInt'] = min(1.0, c * 0.7)
+            patterns['audLowHz'] = 24.0 + 20.0 * c
+            patterns['rumbleL'] = c * 0.4
+            patterns['rumbleR'] = c * 0.4
+        elif event_priority == 'music':
+            c = event_conf * (1.0 - mute['music'])
+            for k in patterns:
+                patterns[k] *= 0.5 * (1.0 - mute['music'])
         return patterns
 
     def _send_onnx_haptics(self, patterns):
@@ -134,44 +162,31 @@ class MainWindow(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Wheeler — Windows (Single Client + Overlay)")
-        self.resize(1180, 800)              # resizable by default
+        self.resize(1180, 800)
         self.setMinimumSize(900, 600)
-
-        # Size grip for UX
         self._size_grip = QtWidgets.QSizeGrip(self)
         self._size_grip.setFixedSize(16, 16)
-
-        # Server + overlay
         self.server = UDPServer(port=8765)
         self.server.telemetry.connect(self.onTelemetry)
         self.server.buttons.connect(self.onButtons)
         self.server.tuning.connect(self.onRemoteTuning)
         self.server.clients_changed.connect(self.onClientsChanged)
-
-        # Create one overlay per screen so the bar appears on every display
         self.overlays = []
         app = QtWidgets.QApplication.instance()
         try:
             for s in app.screens():
                 self.overlays.append(Overlay(screen=s))
         except Exception:
-            # Fallback: at least one overlay on primary
             self.overlays.append(Overlay())
-
-        # Top bar
         top = QtWidgets.QHBoxLayout()
         self.lblLan = QtWidgets.QLabel(f"{list_ipv4()[0]}:8765")
         self.btnStart = QtWidgets.QPushButton("STOP")
         self.btnStart.clicked.connect(self.toggleServer)
-        # New: Edit overlay toggle (mac: keep overlay click‑through by default)
         self.chkEditOverlay = QtWidgets.QCheckBox("Edit overlay (clickable)")
         self.chkEditOverlay.setChecked(False)
         self.chkFreezeSteer = QtWidgets.QCheckBox("Freeze steering (debug)")
-        # New: A/B pad target
         self.cmbPad = QtWidgets.QComboBox(); self.cmbPad.addItems(["X360","DS4"]); self.cmbPad.setCurrentIndex(0)
-        # FFB source label
         self.lblFfbSrc = QtWidgets.QLabel("FFB: –")
-
         top.addWidget(self.lblLan)
         top.addStretch(1)
         top.addWidget(QtWidgets.QLabel("Pad:"))
@@ -182,22 +197,43 @@ class MainWindow(QtWidgets.QWidget):
         top.addWidget(self.chkFreezeSteer)
         top.addWidget(self.chkEditOverlay)
         top.addWidget(self.btnStart)
-
-        # Left column: QR + Inputs
         leftCol = QtWidgets.QVBoxLayout()
         self.qrPane = QRPane(8765); leftCol.addWidget(self.qrPane, 3)
-
         labInputs = QtWidgets.QLabel("INPUTS (last)"); leftCol.addWidget(labInputs)
         inGrid = QtWidgets.QGridLayout(); inGrid.setHorizontalSpacing(16); inGrid.setVerticalSpacing(8)
-
         self.lblSteerVal = QtWidgets.QLabel("0.00"); self.lblSteerVal.setAlignment(Qt.AlignRight)
         self.prSteer = QtWidgets.QProgressBar(); self.prSteer.setRange(0,1000); self.prSteer.setTextVisible(False)
-
         self.lblThrVal = QtWidgets.QLabel("0%"); self.lblThrVal.setAlignment(Qt.AlignRight)
         self.prThrottle = QtWidgets.QProgressBar(); self.prThrottle.setRange(0,1000); self.prThrottle.setFormat("Throttle %p%")
-
         self.lblBrkVal = QtWidgets.QLabel("0%"); self.lblBrkVal.setAlignment(Qt.AlignRight)
         self.prBrake = QtWidgets.QProgressBar(); self.prBrake.setRange(0,1000); self.prBrake.setFormat("Brake %p%")
+        inGrid.addWidget(QtWidgets.QLabel("STEERING"), 0, 0); inGrid.addWidget(self.lblSteerVal, 0, 1); inGrid.addWidget(self.prSteer, 1, 0, 1, 2)
+        inGrid.addWidget(QtWidgets.QLabel("THROTTLE"), 2, 0); inGrid.addWidget(self.lblThrVal, 2, 1); inGrid.addWidget(self.prThrottle, 3, 0, 1, 2)
+        inGrid.addWidget(QtWidgets.QLabel("BRAKE"),    4, 0); inGrid.addWidget(self.lblBrkVal, 4, 1); inGrid.addWidget(self.prBrake,    5, 0, 1, 2)
+        leftCol.addLayout(inGrid)
+        # --- ONNX event/haptic visualization ---
+        self.lblOnnxEvent = QtWidgets.QLabel("ONNX Event: –")
+        self.lblOnnxHaptic = QtWidgets.QLabel("Haptic: –")
+        leftCol.addWidget(self.lblOnnxEvent)
+        leftCol.addWidget(self.lblOnnxHaptic)
+        # --- Force mute sliders ---
+        self.sldMuteImpact = QtWidgets.QSlider(Qt.Horizontal); self.sldMuteImpact.setRange(0, 100); self.sldMuteImpact.setValue(0)
+        self.sldMuteRoad = QtWidgets.QSlider(Qt.Horizontal); self.sldMuteRoad.setRange(0, 100); self.sldMuteRoad.setValue(0)
+        self.sldMuteEngine = QtWidgets.QSlider(Qt.Horizontal); self.sldMuteEngine.setRange(0, 100); self.sldMuteEngine.setValue(0)
+        self.sldMuteMusic = QtWidgets.QSlider(Qt.Horizontal); self.sldMuteMusic.setRange(0, 100); self.sldMuteMusic.setValue(0)
+        leftCol.addWidget(QtWidgets.QLabel("Mute Impact")); leftCol.addWidget(self.sldMuteImpact)
+        leftCol.addWidget(QtWidgets.QLabel("Mute Road/Skid")); leftCol.addWidget(self.sldMuteRoad)
+        leftCol.addWidget(QtWidgets.QLabel("Mute Engine")); leftCol.addWidget(self.sldMuteEngine)
+        leftCol.addWidget(QtWidgets.QLabel("Mute Music")); leftCol.addWidget(self.sldMuteMusic)
+        # Internal mute values
+        self.muteImpact = 0.0
+        self.muteRoad = 0.0
+        self.muteEngine = 0.0
+        self.muteMusic = 0.0
+        self.sldMuteImpact.valueChanged.connect(lambda v: setattr(self, 'muteImpact', v/100.0))
+        self.sldMuteRoad.valueChanged.connect(lambda v: setattr(self, 'muteRoad', v/100.0))
+        self.sldMuteEngine.valueChanged.connect(lambda v: setattr(self, 'muteEngine', v/100.0))
+        self.sldMuteMusic.valueChanged.connect(lambda v: setattr(self, 'muteMusic', v/100.0))
 
         inGrid.addWidget(QtWidgets.QLabel("STEERING"), 0, 0); inGrid.addWidget(self.lblSteerVal, 0, 1); inGrid.addWidget(self.prSteer, 1, 0, 1, 2)
         inGrid.addWidget(QtWidgets.QLabel("THROTTLE"), 2, 0); inGrid.addWidget(self.lblThrVal, 2, 1); inGrid.addWidget(self.prThrottle, 3, 0, 1, 2)
@@ -257,8 +293,29 @@ class MainWindow(QtWidgets.QWidget):
         self.lblAudioStatus = QtWidgets.QLabel("Audio: Inactive")
         ga.addWidget(self.lblAudioStatus, 0, 2)
         # ONNX/classic FFB toggle
+        # Audio Haptics controls
+        boxAudio = QtWidgets.QGroupBox("Audio Haptics")
+        ga = QtWidgets.QGridLayout(boxAudio)
+        ga.setHorizontalSpacing(12); ga.setVerticalSpacing(6)
+        # Device selector
+        self.cmbAudio = QtWidgets.QComboBox()
+        self.cmbAudio.setMinimumWidth(260)
+        devs = []
+        if list_audio_devices is not None:
+            try:
+                devs = list_audio_devices()
+            except Exception:
+                devs = []
+        if not devs:
+            devs = [(-1, 'Auto')]
+        for idx, label in devs:
+            self.cmbAudio.addItem(str(label), idx)
+        ga.addWidget(QtWidgets.QLabel("Audio device"), 0, 0); ga.addWidget(self.cmbAudio, 0, 1)
+        self.lblAudioStatus = QtWidgets.QLabel("Audio: Inactive")
+        ga.addWidget(self.lblAudioStatus, 0, 2)
+        # ONNX/classic FFB toggle
         self.chkOnnxFfb = QtWidgets.QCheckBox("Use ONNX/YAMNet FFB")
-        self.chkOnnxFfb.setChecked(False)
+        self.chkOnnxFfb.setChecked(True)
         ga.addWidget(self.chkOnnxFfb, 0, 3)
         self.sldRoad = QtWidgets.QSlider(Qt.Horizontal); self.sldRoad.setRange(0, 200); self.sldRoad.setValue(100)
         self.sldEng  = QtWidgets.QSlider(Qt.Horizontal); self.sldEng.setRange(0, 200);  self.sldEng.setValue(100)
@@ -422,19 +479,27 @@ class MainWindow(QtWidgets.QWidget):
                 audio = self.audio_probe.get_onnx_audio()
                 if audio is not None:
                     events = self.onnx_detector.predict(audio)
-                    
                     # Generate rich haptic patterns based on sound events
                     haptic_patterns = self._generate_haptic_patterns(events)
-                    
-                    # Send complete haptic telemetry to phone
+                    # Visualize ONNX event and haptic output
+                    if events:
+                        top_event = max(events, key=lambda e: e[1])
+                        self.lblOnnxEvent.setText(f"ONNX Event: {top_event[0]} ({top_event[1]:.2f})")
+                    else:
+                        self.lblOnnxEvent.setText("ONNX Event: –")
                     if haptic_patterns:
                         self._send_onnx_haptics(haptic_patterns)
+                        haptic_str = ', '.join(f"{k}:{v:.2f}" for k,v in haptic_patterns.items() if v > 0.05)
+                        self.lblOnnxHaptic.setText(f"Haptic: {haptic_str}")
                         active_events = [name for name, conf in events if conf > 0.1]
                         self.lblFfbSrc.setText(f"FFB: ONNX ({len(active_events)} events: {', '.join(active_events[:2])})")
                     else:
                         self.lblFfbSrc.setText("FFB: ONNX (no events)")
+                        self.lblOnnxHaptic.setText("Haptic: –")
             except Exception as e:
                 self.lblAudioStatus.setText(f"ONNX error: {e}")
+                self.lblOnnxEvent.setText("ONNX Event: error")
+                self.lblOnnxHaptic.setText("Haptic: –")
         else:
             # FFB source label (classic path)
             try:
