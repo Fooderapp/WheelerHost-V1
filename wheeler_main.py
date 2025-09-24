@@ -403,6 +403,10 @@ class MainWindow(QtWidgets.QWidget):
         self._running = False
         self.toggleServer()
 
+        # Ensure ONNX FFB is initialized if toggle is checked
+        if self.chkOnnxFfb.isChecked():
+            self._toggle_onnx_ffb(True)
+
     # ----- ONNX/classic FFB toggle handler -----
     def _toggle_onnx_ffb(self, checked):
         self.use_onnx_ffb = checked
